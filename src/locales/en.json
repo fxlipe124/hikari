@@ -1,0 +1,426 @@
+{
+  "app": {
+    "name": "Hikari",
+    "subtitle": "Local statement vault"
+  },
+  "common": {
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "dismiss": "Dismiss",
+    "create": "Create",
+    "edit": "Edit",
+    "waiting": "Waiting...",
+    "exporting": "Exporting...",
+    "importing": "Importing...",
+    "copying": "Copying...",
+    "processing": "Processing...",
+    "continue": "Continue",
+    "all": "All",
+    "filters": "Filters",
+    "see_all": "See all",
+    "forget": "Forget",
+    "unlock": "Unlock",
+    "create_vault": "Create vault",
+    "add_card": "Add card",
+    "new_card": "New card",
+    "register_first_card": "Register your first card",
+    "new_category": "New category",
+    "new_subcategory": "New subcategory",
+    "new_transaction": "New transaction",
+    "import_statement": "Import statement",
+    "lock_now": "Lock now",
+    "lock_vault": "Lock vault",
+    "backup_now": "Back up now",
+    "export_month": "Export current month",
+    "export_all": "Export all",
+    "no_category": "No category",
+    "change_file": "change file",
+    "empty_dash": "—",
+    "close": "Close",
+    "password_min_hint": "Use at least 8 characters."
+  },
+  "nav": {
+    "dashboard": "Overview",
+    "transactions": "Transactions",
+    "installments": "Installment plans",
+    "cards": "Cards",
+    "categories": "Categories",
+    "settings": "Settings",
+    "search": "Search",
+    "prev_month": "Previous month",
+    "next_month": "Next month",
+    "current_month": "Current month",
+    "pick_month": "Pick a month",
+    "prev_year": "Previous year",
+    "next_year": "Next year"
+  },
+  "vault": {
+    "status_unlocked": "unlocked"
+  },
+  "route": {
+    "dashboard": {
+      "title": "Overview",
+      "subtitle": "Overview of the open month",
+      "statement_subtitle": "{{card}} statement period",
+      "welcome_title": "Welcome to Hikari",
+      "empty_state": "Add your first card to start tracking statements. Then import a PDF or paste statement text."
+    },
+    "transactions": {
+      "title": "Transactions",
+      "subtitle": "{{month}} · {{count}} entries · {{total}}",
+      "summary": "{{count}} entries · {{total}}"
+    },
+    "cards": {
+      "title": "Cards",
+      "count_one": "{{count}} card registered",
+      "count_other": "{{count}} cards registered"
+    },
+    "categories": {
+      "title": "Categories",
+      "count_one": "{{count}} total category",
+      "count_other": "{{count}} total categories"
+    },
+    "installments": {
+      "title": "Installment plans",
+      "subtitle_one": "{{count}} installment purchase in progress",
+      "subtitle_other": "{{count}} installment purchases in progress"
+    },
+    "settings": {
+      "title": "Settings",
+      "subtitle": "Local app preferences"
+    },
+    "import_preview": {
+      "title": "Review import",
+      "subtitle": "{{included}} of {{total}} selected · {{auto}} auto-categorized",
+      "reference_year": "Year"
+    }
+  },
+  "unlock": {
+    "recents": "Recent",
+    "opened_label": "opened {{date}}",
+    "open_vault": "Open existing vault",
+    "select_vault_file": "Select a .vault file",
+    "create_vault": "Create new vault",
+    "set_master_password": "Set a master password",
+    "security_notice": "Everything stays local. Your password never leaves your machine and is only used to derive the file key.",
+    "master_password_heading": "Master password",
+    "create_password_heading": "Create master password",
+    "no_recovery_warning": "No recovery. If you lose the password, you lose the data."
+  },
+  "dashboard": {
+    "top_categories": "Top categories",
+    "no_categorized": "No categorized transactions yet.",
+    "cards_section": "Cards",
+    "current_statement": "current statement",
+    "recent_transactions": "Recent transactions",
+    "add_card_prompt": "Add a card",
+    "limit_usage": "{{pct}}% of {{limit}}"
+  },
+  "import_preview": {
+    "reference_year": "Year",
+    "detected_card_metadata": "Statement closes on day {{closing}}, due on day {{due}}.",
+    "detected_card_metadata_hint": "Card is set to closing {{cardClosing}} / due {{cardDue}}. Update to match this statement?",
+    "update_card": "Update card"
+  },
+  "bulk_rename": {
+    "title": "Apply rename to related transactions?",
+    "subtitle": "You renamed this purchase to \"{{name}}\". Want to apply the same name to the rows below?",
+    "section_installments": "Other parcelas of this purchase",
+    "section_same_name": "Other transactions with the same name",
+    "skip": "Skip",
+    "apply_one": "Apply to {{count}}",
+    "apply_other": "Apply to {{count}}"
+  },
+  "stats": {
+    "month_total": "Month total",
+    "transactions_count_one": "{{count}} transaction",
+    "transactions_count_other": "{{count}} transactions",
+    "active_installments": "Active installments",
+    "installments_hint": "Purchases paid in installments this month",
+    "active_cards": "Active cards",
+    "active_cards_hint": "With recent activity",
+    "next_due": "Next due date",
+    "due_day_format": "day {{day}}"
+  },
+  "transactions": {
+    "no_match": "No transactions match these filters",
+    "nothing_entered": "Nothing entered in {{month}}",
+    "clear_filters": "Clear filters to see everything.",
+    "manual_or_import": "Enter one manually or import a statement.",
+    "installment_format": "installment {{index}}/{{total}}",
+    "no_category_short": "no category",
+    "virtual_card_badge": "Virtual"
+  },
+  "categories": {
+    "subcategories_count_one": "{{count}} subcategory",
+    "subcategories_count_other": "{{count}} subcategories"
+  },
+  "installments_view": {
+    "no_open": "No open installment purchases.",
+    "paid_format": "{{current}} of {{total}} paid",
+    "remaining": "{{amount}} remaining",
+    "per_installment": "{{count}}× of {{amount}}"
+  },
+  "settings": {
+    "current_vault": "Current vault",
+    "backup_description": "A backup is an encrypted copy of the .vault file saved next to the original. Keeps the 3 most recent; opens with the same password.",
+    "export_transactions": "Export transactions",
+    "csv_description": "CSV (UTF-8 with BOM), compatible with any spreadsheet app. Use it to reconcile or keep a copy outside the vault.",
+    "appearance": "Appearance",
+    "appearance_description": "Light, dark, or follow system theme.",
+    "light_theme": "Light",
+    "dark_theme": "Dark",
+    "system_theme": "System",
+    "autolock": "Auto-lock",
+    "autolock_description": "Inactivity time before automatically locking the vault.",
+    "autolock_1m": "1 min",
+    "autolock_5m": "5 min",
+    "autolock_10m": "10 min",
+    "autolock_30m": "30 min",
+    "autolock_1h": "1 hour",
+    "language": "Language",
+    "language_description": "Display language for the app interface.",
+    "currency": "Currency",
+    "currency_description": "Display currency used to format every amount in the app."
+  },
+  "language": {
+    "en": "English",
+    "pt-BR": "Português (Brasil)"
+  },
+  "currency": {
+    "BRL": "Brazilian Real (R$)",
+    "USD": "US Dollar ($)"
+  },
+  "category": {
+    "cat-food": "Food",
+    "cat-delivery": "Delivery",
+    "cat-market": "Groceries",
+    "cat-restaurant": "Restaurant",
+    "cat-transport": "Transportation",
+    "cat-fuel": "Fuel",
+    "cat-rideshare": "Rideshare",
+    "cat-subs": "Subscriptions",
+    "cat-health": "Health",
+    "cat-home": "Home",
+    "cat-leisure": "Leisure",
+    "cat-shopping": "Shopping",
+    "cat-others": "Other"
+  },
+  "import": {
+    "total": "Total to import",
+    "import_count": "Import {{count}}",
+    "tab": {
+      "paste": "Paste text",
+      "pdf": "PDF file"
+    },
+    "no_cards_hint": "Register a card first in **Cards**.",
+    "paste_placeholder": "Paste statement content here (from a PDF, your bank's website, a text-extraction app, anything). The parser handles column-formatted text with dates and amounts.",
+    "text_info": "{{lines}} lines · {{chars}} characters",
+    "pdf_instruction": "Drag the PDF here or click to select",
+    "pdf_password_hint": "If the PDF is password-protected, you'll enter it below.",
+    "auto_categorization_hint": "Category, date, and amount are detected automatically. You review and approve each transaction in the preview before saving.",
+    "statement_year": "Year",
+    "statement_year_hint": "Used when the statement only has DD/MM dates without an explicit year.",
+    "statement_period": "Statement period",
+    "statement_period_hint": "Closing month of this statement. The card's closing day decides which calendar year/month each DD/MM row belongs to.",
+    "issuer": {
+      "sofisa": "Sofisa Direto",
+      "mercado_pago": "Mercado Pago",
+      "nubank": "Nubank",
+      "generic": "Generic"
+    }
+  },
+  "search": {
+    "placeholder": "Search merchant, description…"
+  },
+  "filter": {
+    "title": "Filters",
+    "categories": "Categories",
+    "refund_only": "Refunds only",
+    "installments_only": "Installments only",
+    "uncategorized_only": "Uncategorized only",
+    "virtual_only": "Virtual card only",
+    "amount_range": "Amount range",
+    "amount_min": "Min",
+    "amount_max": "Max",
+    "date_range": "Date range",
+    "date_from": "From",
+    "date_to": "To",
+    "sort": "Sort",
+    "sort_date_desc": "Newest first",
+    "sort_date_asc": "Oldest first",
+    "sort_amount_desc": "Highest amount",
+    "sort_amount_asc": "Lowest amount",
+    "clear": "Clear all",
+    "apply": "Apply"
+  },
+  "table": {
+    "header": {
+      "date": "Date",
+      "description": "Description",
+      "category": "Category",
+      "card": "Card",
+      "amount": "Amount",
+      "installment": "Installment"
+    }
+  },
+  "form": {
+    "label": {
+      "name": "Name",
+      "brand": "Brand",
+      "last4": "Last 4 digits",
+      "credit_limit": "Limit",
+      "closing_day": "Closing day",
+      "due_day": "Due day",
+      "color": "Color",
+      "icon": "Icon (Lucide)",
+      "parent_category": "Parent category",
+      "card": "Card",
+      "date": "Date",
+      "description": "Description",
+      "merchant_clean": "Merchant (clean)",
+      "amount": "Amount",
+      "category": "Category",
+      "installment": "Installment",
+      "current_installment": "Current installment",
+      "total_installments": "Total installments",
+      "notes": "Notes",
+      "refund": "Is refund/chargeback",
+      "pdf_password": "PDF password"
+    },
+    "placeholder": {
+      "card_name": "Personal Card",
+      "category_name": "Bakery",
+      "amount": "1,000.00",
+      "amount_simple": "87.90",
+      "last4": "4421",
+      "limit": "18,000.00",
+      "transaction_desc": "IFOOD *PIZZARIA NONNA",
+      "merchant_name": "iFood — Pizzaria Nonna"
+    },
+    "hint": {
+      "optional": "Optional",
+      "optional_display": "Optional, for display",
+      "installment_cascade_one": "Will create {{count}} row, one per month, sharing the same installment group.",
+      "installment_cascade_other": "Will create {{count}} rows, one per month, sharing the same installment group."
+    },
+    "description": {
+      "installment": "Purchase split across monthly statements",
+      "refund": "Subtracts from month total"
+    },
+    "option": {
+      "root": "— root —",
+      "choose": "— choose —",
+      "no_category": "— no category —",
+      "brand_other": "Other"
+    }
+  },
+  "card": {
+    "field": {
+      "closing": "Closing",
+      "due": "Due",
+      "limit": "Limit"
+    },
+    "day_format": "day {{day}}"
+  },
+  "dialog": {
+    "card": {
+      "edit_title": "Edit card",
+      "new_title": "New card",
+      "delete_confirm": "Delete this card? All linked transactions will also be removed."
+    },
+    "category": {
+      "edit_title": "Edit category",
+      "new_title": "New category",
+      "delete_confirm": "Delete this category? Transactions linked to it will be left without a category."
+    },
+    "transaction": {
+      "edit_title": "Edit transaction",
+      "new_title": "New transaction",
+      "delete_confirm": "Delete this transaction?"
+    },
+    "import": {
+      "title": "Import statement",
+      "description": "Paste content or drop the PDF — I'll detect the issuer and show a preview before saving."
+    },
+    "file": {
+      "select_vault": "Select a vault",
+      "create_vault": "Save new vault",
+      "select_pdf": "Select a PDF statement",
+      "save_csv": "Save CSV export"
+    }
+  },
+  "toast": {
+    "vault_created": "Vault created",
+    "card_created": "Card created",
+    "card_updated": "Card updated",
+    "card_updated_recomputed": "Card updated — past transactions regrouped",
+    "card_deleted": "Card deleted",
+    "card_save_failed": "Failed to save card",
+    "card_metadata_updated": "Card updated from statement header",
+    "card_delete_failed": "Failed to delete card",
+    "category_created": "Category created",
+    "category_create_failed": "Failed to create category",
+    "category_updated": "Category updated",
+    "category_save_failed": "Failed to save category",
+    "category_deleted": "Category deleted",
+    "category_delete_failed": "Failed to delete category",
+    "transaction_created": "Transaction created",
+    "transaction_duplicated": "Transaction duplicated",
+    "transaction_updated": "Transaction updated",
+    "bulk_renamed_one": "{{count}} other transaction renamed",
+    "bulk_renamed_other": "{{count}} other transactions renamed",
+    "installments_created_one": "{{count}} installment created",
+    "installments_created_other": "{{count}} installments created",
+    "transaction_deleted": "Transaction deleted",
+    "transaction_save_failed": "Failed to save transaction",
+    "transaction_delete_failed": "Failed to delete transaction",
+    "backup_created": "Backup created",
+    "csv_exported_one": "{{count}} transaction exported",
+    "csv_exported_other": "{{count}} transactions exported",
+    "csv_export_month_desc": "Month {{month}}",
+    "csv_export_all_desc": "All transactions",
+    "import_complete": "{{inserted}} imported, {{skipped}} already existed (duplicates).",
+    "vault_locked_inactivity": "Vault locked",
+    "inactivity_detected": "Inactivity detected"
+  },
+  "error": {
+    "fallback": "Something went wrong",
+    "generic": "Error",
+    "vault_locked": "Vault is locked",
+    "invalid_password": "Incorrect password",
+    "wrong_password": "Incorrect password.",
+    "vault_not_found": "Vault not found",
+    "vault_already_exists": "A vault already exists at this path",
+    "vault_exists_dot": "A vault already exists at this path.",
+    "vault_not_found_dot": "Vault not found.",
+    "io": "I/O error",
+    "db": "Database error",
+    "invalid": "Invalid data",
+    "internal": "Internal error",
+    "password_mismatch": "Passwords don't match.",
+    "password_too_short": "Use at least 8 characters.",
+    "name_required": "Name is required.",
+    "edit_not_implemented": "Category editing is not implemented yet.",
+    "invalid_amount": "Invalid amount.",
+    "card_required": "Select a card.",
+    "description_required": "Description is required.",
+    "invalid_installments": "Installments: total must be ≥ 2 and index between 1 and total.",
+    "last4_invalid": "Last 4 must be exactly 4 digits.",
+    "closing_day_range": "Closing day must be between 1 and 31.",
+    "due_day_range": "Due day must be between 1 and 31.",
+    "limit_invalid": "Invalid limit.",
+    "pdf_drop_requires_tauri": "PDF drop requires running via `npm run tauri dev`.",
+    "file_path_read_failed": "Could not read file path. Try clicking to select.",
+    "pdf_protected": "PDF is password-protected — enter the password below.",
+    "tauri_backend_required": "Parser requires the Tauri backend to be running.",
+    "no_transactions_recognized": "No transactions recognized. Check the text/PDF format.",
+    "backup_native_only": "Backup only works in the native app.",
+    "backup_failed": "Failed to create backup",
+    "export_native_only": "Export only works in the native app.",
+    "csv_export_failed": "Failed to export CSV"
+  }
+}

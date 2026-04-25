@@ -1,0 +1,65 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+build/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+**/*.rs.bk
+*.pdb
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# User vault files (encrypted, but never commit user data)
+*.vault
+*.vault.bak
+*.vault.bak.*
+config.json
+app_config.json
+
+# Locally-built installers copied to project root for convenience
+# (canonical builds come from release.yml via tauri-action)
+/Hikari.exe
+/Hikari_*.exe
+/Hikari_*.msi
+
+# AI session context dumps and local working notes (kept local, never tracked)
+/PROMPT.md
+/.notes/
+
+# Editor & OS
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build artifacts
+*.local
+*.tsbuildinfo
+
+# Test fixtures with real data (commit synthetic ones only)
+src-tauri/tests/fixtures/private/

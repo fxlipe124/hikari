@@ -1,0 +1,86 @@
+name: Release
+
+# Triggered manually or by pushing a tag like `v0.1.0`. Builds installers for
+# all three desktop platforms in parallel and attaches them to a GitHub
+# Release as draft artifacts (you publish manually after verifying).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux
+            os: ubuntu-latest
+            args: ""
+          - name: windows
+            os: windows-latest
+            args: ""
+          - name: macos-arm
+            os: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - name: macos-intel
+            os: macos-latest
+            args: "--target x86_64-apple-darwin"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.name == 'macos-arm' && 'aarch64-apple-darwin' || matrix.platform.name == 'macos-intel' && 'x86_64-apple-darwin' || '' }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.platform.name }}
+
+      - name: Install Linux deps
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev
+
+      - name: Install Strawberry Perl
+        if: matrix.platform.os == 'windows-latest'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          distribution: strawberry
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build & bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.0.0-dev-{0}', github.sha) }}
+          releaseName: "Hikari ${{ github.ref_type == 'tag' && github.ref_name || 'dev build' }}"
+          releaseBody: "See [CHANGELOG](./CHANGELOG.md) for the details of this release."
+          releaseDraft: true
+          prerelease: ${{ github.ref_type != 'tag' }}
+          args: ${{ matrix.platform.args }}
