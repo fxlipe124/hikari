@@ -5,6 +5,26 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] — 2026-04-27
+
+### Fixed
+
+- **Password-protected PDF imports failing with `invalid input: PDF
+  is encrypted; password is required`**. The backend was returning a
+  generic `Invalid` error code when no password was supplied to a
+  locked PDF, and the frontend only intercepted `invalid_password` —
+  so the prompt never appeared and the raw error leaked into a toast.
+  Both cases (no password, wrong password) now map to
+  `InvalidPassword` so the existing inline-prompt flow takes over.
+
+### Changed
+
+- **PDF password field always visible** when at least one PDF is
+  queued, instead of only revealing after the first failure. Lets
+  the user pre-fill the password before clicking Continue and skip
+  the failed-attempt round-trip — and clarifies (via a small hint)
+  that the same password is reused for every file in a batch.
+
 ## [0.1.3] — 2026-04-27
 
 ### Added
@@ -165,6 +185,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.4]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.4
 [0.1.3]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.3
 [0.1.2]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.2
 [0.1.1]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.1

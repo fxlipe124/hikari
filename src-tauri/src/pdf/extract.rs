@@ -14,7 +14,14 @@ pub fn extract_text_from_bytes(bytes: &[u8], password: Option<&str>) -> AppResul
         .map_err(|e| AppError::Invalid(format!("failed to load PDF: {}", e)))?;
 
     if doc.is_encrypted() {
-        let pw = password.ok_or_else(|| AppError::Invalid("PDF is encrypted; password required".into()))?;
+        // Both "caller didn't supply a password" and "the password is wrong"
+        // surface as `InvalidPassword` so the frontend's existing handler
+        // (which already toggles between "PDF is protected" and "Incorrect
+        // password" based on whether a password field had been shown yet)
+        // picks them up uniformly. Returning the generic `Invalid` variant
+        // here used to leak the raw "PDF is encrypted; password required"
+        // toast and skip the prompt entirely on multi-PDF batch imports.
+        let pw = password.ok_or(AppError::InvalidPassword)?;
         doc.decrypt(pw)
             .map_err(|_| AppError::InvalidPassword)?;
     }

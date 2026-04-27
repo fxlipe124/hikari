@@ -198,13 +198,19 @@ export function ImportDialog({
           try {
             text = await ipc.import.extractPdf(
               f.path,
-              needsPassword ? pdfPassword : undefined,
+              pdfPassword.length > 0 ? pdfPassword : undefined,
             );
           } catch (e) {
             if (isIpcError(e) && e.code === "invalid_password") {
+              // First failure reveals the password field & focuses it. A
+              // subsequent failure (with a non-empty `pdfPassword`) means
+              // the password we just tried was wrong — different copy.
+              const hadPasswordTried = pdfPassword.length > 0;
               setNeedsPassword(true);
               setError(
-                needsPassword ? t("error.wrong_password") : t("error.pdf_protected"),
+                hadPasswordTried
+                  ? t("error.wrong_password")
+                  : t("error.pdf_protected"),
               );
               setBusy(false);
               setProgress(null);
@@ -453,18 +459,30 @@ export function ImportDialog({
                   </>
                 )}
               </div>
-              {needsPassword && (
+              {pdfFiles.length > 0 && (
                 <div className="mt-3">
                   <label className="mb-1 block text-xs font-medium text-fg-muted">
                     {t("form.label.pdf_password")}
+                    <span className="ml-1 text-[10px] text-fg-subtle font-normal">
+                      ({t("form.hint.optional")})
+                    </span>
                   </label>
                   <Input
                     type="password"
                     value={pdfPassword}
-                    onChange={(e) => setPdfPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPdfPassword(e.target.value);
+                      // The user typed something — treat the next attempt as
+                      // "with password". Otherwise the dispatch in onContinue
+                      // would still pass `undefined` until the first failure.
+                      if (e.target.value.length > 0) setNeedsPassword(true);
+                    }}
                     placeholder="••••••••"
-                    autoFocus
+                    autoFocus={needsPassword}
                   />
+                  <p className="mt-1 text-[10px] text-fg-subtle">
+                    {t("import.pdf_password_optional_hint")}
+                  </p>
                 </div>
               )}
               {pdfFiles.length > 1 && (

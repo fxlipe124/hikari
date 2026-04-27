@@ -236,6 +236,7 @@
     "pdf_instruction": "Arraste o PDF aqui ou clique para selecionar",
     "pdf_instruction_multi": "Arraste os PDFs aqui ou clique para selecionar. Você pode escolher vários de uma vez.",
     "pdf_password_hint": "Se o PDF tiver senha, você vai informar abaixo.",
+    "pdf_password_optional_hint": "A mesma senha é reusada em todos os PDFs deste lote. Deixe em branco se as faturas não tiverem senha.",
     "pdf_files_selected_one": "1 arquivo selecionado",
     "pdf_files_selected_other": "{{count}} arquivos selecionados",
     "add_more": "Adicionar mais",
