@@ -14,6 +14,8 @@
     "clear": "Limpar",
     "create": "Criar",
     "edit": "Editar",
+    "undo": "Desfazer",
+    "redo": "Refazer",
     "waiting": "Aguarde...",
     "exporting": "Exportando...",
     "importing": "Importando...",
@@ -415,7 +417,20 @@
     "csv_export_all_desc": "Todas as transações",
     "import_complete": "{{inserted}} importadas, {{skipped}} já existentes (duplicadas).",
     "vault_locked_inactivity": "Cofre bloqueado",
-    "inactivity_detected": "Inatividade detectada"
+    "inactivity_detected": "Inatividade detectada",
+    "undone": "Desfeito: {{label}}",
+    "redone": "Refeito: {{label}}",
+    "nothing_to_undo": "Nada para desfazer",
+    "nothing_to_redo": "Nada para refazer"
+  },
+  "history": {
+    "tx_deleted": "transação apagada",
+    "tx_bulk_deleted": "transações apagadas",
+    "tx_bulk_updated": "transações atualizadas",
+    "tx_updated": "transação editada",
+    "imported_n": "importação",
+    "card_deleted": "cartão apagado",
+    "category_deleted": "categoria apagada"
   },
   "error": {
     "fallback": "Algo deu errado",

@@ -14,6 +14,8 @@
     "clear": "Clear",
     "create": "Create",
     "edit": "Edit",
+    "undo": "Undo",
+    "redo": "Redo",
     "waiting": "Waiting...",
     "exporting": "Exporting...",
     "importing": "Importing...",
@@ -415,7 +417,20 @@
     "csv_export_all_desc": "All transactions",
     "import_complete": "{{inserted}} imported, {{skipped}} already existed (duplicates).",
     "vault_locked_inactivity": "Vault locked",
-    "inactivity_detected": "Inactivity detected"
+    "inactivity_detected": "Inactivity detected",
+    "undone": "Undone: {{label}}",
+    "redone": "Redone: {{label}}",
+    "nothing_to_undo": "Nothing to undo",
+    "nothing_to_redo": "Nothing to redo"
+  },
+  "history": {
+    "tx_deleted": "transaction deleted",
+    "tx_bulk_deleted": "transactions deleted",
+    "tx_bulk_updated": "transactions updated",
+    "tx_updated": "transaction edited",
+    "imported_n": "import",
+    "card_deleted": "card deleted",
+    "category_deleted": "category deleted"
   },
   "error": {
     "fallback": "Something went wrong",

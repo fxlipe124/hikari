@@ -94,3 +94,20 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     conn.execute("DELETE FROM categories WHERE id = ?", [id])?;
     Ok(())
 }
+
+/// Re-insert a category with its original id. Used by the undo flow after a
+/// `categories_remove` so the bulk_update that re-attaches transactions to
+/// this category points at the same id the user remembers.
+pub fn restore(conn: &Connection, category: &Category) -> AppResult<Category> {
+    conn.execute(
+        "INSERT INTO categories (id, name, icon, color, parent_id) VALUES (?, ?, ?, ?, ?)",
+        params![
+            category.id,
+            category.name,
+            category.icon,
+            category.color,
+            category.parent_id,
+        ],
+    )?;
+    Ok(category.clone())
+}

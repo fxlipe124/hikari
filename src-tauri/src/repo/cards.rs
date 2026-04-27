@@ -138,6 +138,27 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Re-insert a card with its original id. Used by the undo flow after a
+/// `cards_remove` so that the cascade-restored transactions (which reference
+/// the original card_id) still satisfy the FK.
+pub fn restore(conn: &Connection, card: &Card) -> AppResult<Card> {
+    conn.execute(
+        "INSERT INTO cards (id, name, brand, last4, closing_day, due_day, color, credit_limit_cents)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            card.id,
+            card.name,
+            card.brand,
+            card.last4,
+            card.closing_day,
+            card.due_day,
+            card.color,
+            card.credit_limit_cents,
+        ],
+    )?;
+    Ok(card.clone())
+}
+
 fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
     Ok(Card {
         id: r.get(0)?,

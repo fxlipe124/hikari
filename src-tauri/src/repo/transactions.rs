@@ -262,6 +262,68 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Re-insert a previously-deleted batch of rows with their original IDs and
+/// payloads. Used by the undo flow: capture the full Transaction list before
+/// `remove`/`bulk_remove`, then call this to bring them back. dedup_hash is
+/// recomputed (SQL forbids reading dropped values), but every other column —
+/// including statement_year_month and source_import_id — is preserved verbatim
+/// so the restored row joins back to its original import / installment group.
+pub fn restore(conn: &Connection, rows: &[Transaction]) -> AppResult<usize> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let mut count = 0usize;
+    for row in rows {
+        if let Some(group_id) = row.installment_group_id.as_deref() {
+            let total_n = row.installment_total.unwrap_or(1).max(1);
+            let total_cents = row.amount_cents.saturating_mul(total_n);
+            conn.execute(
+                "INSERT OR IGNORE INTO installment_groups (id, total_n, total_cents, first_posted_at, description)
+                 VALUES (?, ?, ?, ?, ?)",
+                params![group_id, total_n, total_cents, row.posted_at, row.description],
+            )?;
+        }
+        let dedup = compute_dedup_hash(&row.posted_at, row.amount_cents, &row.description);
+        conn.execute(
+            "INSERT INTO transactions (id, card_id, posted_at, description, merchant_clean, amount_cents, currency, fx_rate, category_id, notes, installment_group_id, installment_index, installment_total, is_refund, is_virtual_card, source_import_id, dedup_hash, statement_year_month)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            params![
+                row.id,
+                row.card_id,
+                row.posted_at,
+                row.description,
+                row.merchant_clean,
+                row.amount_cents,
+                row.currency,
+                row.fx_rate,
+                row.category_id,
+                row.notes,
+                row.installment_group_id,
+                row.installment_index,
+                row.installment_total,
+                if row.is_refund { 1 } else { 0 },
+                if row.is_virtual_card { 1 } else { 0 },
+                row.source_import_id,
+                dedup,
+                row.statement_year_month,
+            ],
+        )?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Delete every row tagged with the given source_import_id. The natural undo
+/// for an `import_commit`: a single import id rolls back the whole fatura
+/// without the frontend having to track every inserted row.
+pub fn remove_by_import(conn: &Connection, import_id: &str) -> AppResult<usize> {
+    let count = conn.execute(
+        "DELETE FROM transactions WHERE source_import_id = ?",
+        [import_id],
+    )?;
+    Ok(count)
+}
+
 /// Delete a batch of transactions in one prepared-statement loop. Used
 /// by the multi-select toolbar in the Transactions page so the user
 /// can clear a stack of imported test rows in one click.
@@ -470,7 +532,103 @@ fn compute_dedup_hash(posted_at: &str, amount_cents: i64, description: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::statement_period;
+    use super::*;
+    use crate::models::{Transaction, TransactionInput};
+    use rusqlite::Connection;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        crate::vault::migrations::run(&conn, "en").unwrap();
+        // Need at least one card for the FK to point at.
+        conn.execute(
+            "INSERT INTO cards (id, name, brand, closing_day, due_day) VALUES ('card-test', 'Test', 'visa', 16, 24)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn make_input() -> TransactionInput {
+        TransactionInput {
+            card_id: "card-test".into(),
+            posted_at: "2024-08-15T00:00:00Z".into(),
+            description: "Coffee shop".into(),
+            merchant_clean: Some("Coffee".into()),
+            amount_cents: 1500,
+            currency: Some("BRL".into()),
+            fx_rate: None,
+            category_id: None,
+            notes: Some("Tasty".into()),
+            installment_group_id: None,
+            installment_index: None,
+            installment_total: None,
+            is_refund: false,
+            is_virtual_card: false,
+            source_import_id: None,
+            statement_year_month: Some("2024-08".into()),
+        }
+    }
+
+    #[test]
+    fn restore_round_trip_preserves_id_and_period() {
+        let conn = setup_test_db();
+        let created = create(&conn, &make_input()).unwrap();
+        let original_id = created.id.clone();
+        let original_ym = created.statement_year_month.clone();
+
+        // Snapshot, delete, restore.
+        let snapshot: Vec<Transaction> = vec![created.clone()];
+        remove(&conn, &original_id).unwrap();
+        let restored_count = restore(&conn, &snapshot).unwrap();
+        assert_eq!(restored_count, 1);
+
+        let fetched = get(&conn, &original_id).unwrap();
+        assert_eq!(fetched.id, original_id);
+        assert_eq!(fetched.statement_year_month, original_ym);
+        assert_eq!(fetched.description, "Coffee shop");
+        assert_eq!(fetched.amount_cents, 1500);
+        assert_eq!(fetched.notes.as_deref(), Some("Tasty"));
+    }
+
+    #[test]
+    fn remove_by_import_only_nukes_matching_rows() {
+        let conn = setup_test_db();
+        // Pretend two separate imports landed two rows each.
+        conn.execute(
+            "INSERT INTO imports (id, source, status, card_id) VALUES ('imp-A', 'paste', 'committed', 'card-test')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO imports (id, source, status, card_id) VALUES ('imp-B', 'paste', 'committed', 'card-test')",
+            [],
+        ).unwrap();
+
+        let mut a1 = make_input();
+        a1.source_import_id = Some("imp-A".into());
+        a1.description = "From A 1".into();
+        let mut a2 = make_input();
+        a2.source_import_id = Some("imp-A".into());
+        a2.description = "From A 2".into();
+        let mut b1 = make_input();
+        b1.source_import_id = Some("imp-B".into());
+        b1.description = "From B 1".into();
+
+        create(&conn, &a1).unwrap();
+        create(&conn, &a2).unwrap();
+        create(&conn, &b1).unwrap();
+
+        let removed = remove_by_import(&conn, "imp-A").unwrap();
+        assert_eq!(removed, 2);
+
+        // Only B should survive.
+        let f = TransactionFilter::default();
+        let remaining = list(&conn, &f).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].source_import_id.as_deref(), Some("imp-B"));
+        assert_eq!(remaining[0].description, "From B 1");
+    }
+
 
     #[test]
     fn statement_period_before_closing_stays_in_same_month() {

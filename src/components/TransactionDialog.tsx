@@ -20,11 +20,12 @@ import {
 } from "@/components/BulkApplyDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
 import {
-  useBulkRemoveTransactions,
-  useBulkUpdateTransactions,
   useCreateTransaction,
-  useDeleteTransaction,
   useUpdateTransaction,
+  useUndoableBulkRemoveTransactions,
+  useUndoableBulkUpdateTransactions,
+  useUndoableDeleteTransaction,
+  useUndoableUpdateTransaction,
 } from "@/lib/mutations";
 import type { Transaction } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
@@ -167,9 +168,10 @@ export function TransactionDialog({
   const { data: allTxs } = useTransactions();
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
-  const del = useDeleteTransaction();
-  const bulkUpdate = useBulkUpdateTransactions();
-  const bulkRemove = useBulkRemoveTransactions();
+  const undoableUpdate = useUndoableUpdateTransaction();
+  const undoableDelete = useUndoableDeleteTransaction();
+  const undoableBulkUpdate = useUndoableBulkUpdateTransactions();
+  const undoableBulkRemove = useUndoableBulkRemoveTransactions();
 
   const [form, setForm] = useState<FormState>(() =>
     editing ? fromTx(editing) : emptyForm(cards?.[0]?.id ?? null)
@@ -312,7 +314,10 @@ export function TransactionDialog({
             t("toast.installments_created", { count: spawned + 1 }),
           );
         } else {
-          await update.mutateAsync({ id: editing.id, patch: basePayload });
+          await undoableUpdate.mutateAsync({
+            original: editing,
+            patch: basePayload,
+          });
           // After a successful save, look for related rows that probably
           // want the same change applied:
           //  - other parcelas in the same installment_group_id
@@ -340,12 +345,10 @@ export function TransactionDialog({
             renamed || recategorized ? findBulkCandidates(editing, allTxs ?? []) : [];
           if (candidates.length > 0) {
             setBulkContext({ candidates, change, intent: "apply" });
-            toast.success(t("toast.transaction_updated"));
             // Keep the editor dialog open beneath; BulkApplyDialog stacks
             // on top. Once the user picks an option there, we close both.
             return;
           }
-          toast.success(t("toast.transaction_updated"));
         }
       } else if (form.isInstallment && form.installmentIndex < form.installmentTotal) {
         // New k/N purchase: create the user-entered row k, then cascade
@@ -394,8 +397,7 @@ export function TransactionDialog({
     }
     if (!window.confirm(t("dialog.transaction.delete_confirm"))) return;
     try {
-      await del.mutateAsync(editing.id);
-      toast.success(t("toast.transaction_deleted"));
+      await undoableDelete.mutateAsync(editing);
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -449,7 +451,11 @@ export function TransactionDialog({
     }
   }
 
-  const busy = create.isPending || update.isPending || del.isPending;
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    undoableUpdate.isPending ||
+    undoableDelete.isPending;
 
   async function applyBulkChange(selectedIds: string[]) {
     if (!bulkContext) return;
@@ -466,8 +472,8 @@ export function TransactionDialog({
           onOpenChange(false);
           return;
         }
-        const count = await bulkRemove.mutateAsync(ids);
-        toast.success(t("toast.bulk_removed", { count }));
+        const rows = (allTxs ?? []).filter((x) => ids.includes(x.id));
+        await undoableBulkRemove.mutateAsync(rows);
         setBulkContext(null);
         onOpenChange(false);
         return;
@@ -481,11 +487,8 @@ export function TransactionDialog({
       // Strip the display-only categoryLabel before sending to the
       // backend — it's not a column.
       const { categoryLabel: _, ...patch } = change;
-      const count = await bulkUpdate.mutateAsync({
-        ids: selectedIds,
-        patch,
-      });
-      toast.success(t("toast.bulk_updated", { count }));
+      const rows = (allTxs ?? []).filter((x) => selectedIds.includes(x.id));
+      await undoableBulkUpdate.mutateAsync({ rows, patch });
     } catch (e) {
       toast.fromError(e, t("toast.transaction_save_failed"));
     } finally {
@@ -685,7 +688,7 @@ export function TransactionDialog({
         change={bulkContext.change}
         intent={bulkContext.intent}
         onApply={applyBulkChange}
-        busy={bulkUpdate.isPending || bulkRemove.isPending}
+        busy={undoableBulkUpdate.isPending || undoableBulkRemove.isPending}
       />
     )}
   </>);

@@ -157,6 +157,11 @@ export interface ImportResult {
   inserted: number;
   skipped: number;
   total: number;
+  /**
+   * Stamped on every row of this import. Pass to `transactions.removeByImport`
+   * to roll the whole fatura back as the redo of an undo.
+   */
+  importId: string;
 }
 
 export const ipc = {
@@ -202,6 +207,8 @@ export const ipc = {
       patch: Partial<Card> & { recomputeStatements?: boolean },
     ) => invoke<Card>("cards_update", { id, patch }),
     remove: (id: string) => invoke<void>("cards_remove", { id }),
+    /** Re-insert a card with its original id; used by undo of cards.remove. */
+    restore: (card: Card) => invoke<Card>("cards_restore", { card }),
   },
   categories: {
     list: () => invoke<Category[]>("categories_list"),
@@ -210,6 +217,9 @@ export const ipc = {
     update: (id: string, patch: Partial<Category>) =>
       invoke<Category>("categories_update", { id, patch }),
     remove: (id: string) => invoke<void>("categories_remove", { id }),
+    /** Re-insert a category with its original id; used by undo of categories.remove. */
+    restore: (category: Category) =>
+      invoke<Category>("categories_restore", { category }),
   },
   transactions: {
     list: (filter?: {
@@ -223,6 +233,12 @@ export const ipc = {
     update: (id: string, patch: Partial<Transaction>) =>
       invoke<Transaction>("transactions_update", { id, patch }),
     remove: (id: string) => invoke<void>("transactions_remove", { id }),
+    /** Re-insert a batch of full transaction rows with their original ids. */
+    restore: (rows: Transaction[]) =>
+      invoke<number>("transactions_restore", { rows }),
+    /** Drop every row tagged with this source_import_id. */
+    removeByImport: (importId: string) =>
+      invoke<number>("transactions_remove_by_import", { importId }),
     bulkUpdate: (
       ids: string[],
       patch: {

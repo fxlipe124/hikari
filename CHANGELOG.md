@@ -5,6 +5,40 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.7] — 2026-04-27
+
+### Added
+
+- **Undo across destructive operations.** Two surfaces feeding the same
+  history stack:
+  - **Toast "Desfazer" (7-second window).** Every successful destructive
+    action now shows a Sonner toast with an Undo button. Click it to
+    revert the action — same machinery as Ctrl+Z, just a faster path
+    for the immediate-regret case.
+  - **Global Ctrl+Z / Ctrl+Y.** App-wide multi-level undo/redo stack.
+    Ctrl+Z (or Cmd+Z on macOS) reverts the most recent op, Ctrl+Y or
+    Ctrl+Shift+Z replays it. Up to 50 ops kept; cleared on vault relock
+    so the stack never carries over to a different unlock session.
+    Skipped when focus is in an input/textarea so native text-editing
+    undo still works.
+
+  Operations covered: single tx delete, bulk delete, delete cascade
+  (parcelas / same-name), bulk update (rename + categorize cascade),
+  single tx edit save, import commit (the whole fatura rolls back at
+  once via a new `transactions_remove_by_import` IPC), card delete
+  (full card + every tx of that card cascade-restored), category
+  delete (category + every affected tx's categoryId restored).
+
+### Backend
+
+- **`transactions_restore`** + **`transactions_remove_by_import`** IPCs;
+  re-insert rows with their original ids (incl. `statement_year_month`
+  and `source_import_id`) and bulk-drop a whole import in one shot.
+- **`cards_restore`** and **`categories_restore`** preserve the
+  original id so cascade-restored transactions still satisfy the FK.
+- **`ImportResult.import_id`** now returned from `import_commit` so the
+  frontend can stash it for undo.
+
 ## [0.1.6] — 2026-04-27
 
 ### Added
@@ -236,6 +270,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.7]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.7
 [0.1.6]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.6
 [0.1.5]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.5
 [0.1.4]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.4

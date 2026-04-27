@@ -15,9 +15,10 @@ import { Field, FieldRow } from "@/components/ui/Field";
 import { useCategories } from "@/lib/queries";
 import {
   useCreateCategory,
-  useDeleteCategory,
+  useUndoableDeleteCategory,
   useUpdateCategory,
 } from "@/lib/mutations";
+import { ipc } from "@/lib/ipc";
 import type { Category } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -48,7 +49,7 @@ export function CategoryDialog({
   const { data: categories } = useCategories();
   const create = useCreateCategory();
   const update = useUpdateCategory();
-  const del = useDeleteCategory();
+  const del = useUndoableDeleteCategory();
 
   const [form, setForm] = useState({
     name: "",
@@ -125,8 +126,14 @@ export function CategoryDialog({
     if (!editing) return;
     if (!window.confirm(t("dialog.category.delete_confirm"))) return;
     try {
-      await del.mutateAsync(editing.id);
-      toast.success(t("toast.category_deleted"));
+      // Capture the affected tx ids up front — once the backend deletes the
+      // category, the FK ON DELETE SET NULL fires and we can no longer tell
+      // which rows were tagged with this category.
+      const allTxs = await ipc.transactions.list();
+      const affectedTxIds = allTxs
+        .filter((tx) => tx.categoryId === editing.id)
+        .map((tx) => tx.id);
+      await del.mutateAsync({ category: editing, affectedTxIds });
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -14,9 +14,10 @@ import { Select } from "@/components/ui/Select";
 import { Field, FieldRow } from "@/components/ui/Field";
 import {
   useCreateCard,
-  useDeleteCard,
+  useUndoableDeleteCard,
   useUpdateCard,
 } from "@/lib/mutations";
+import { ipc } from "@/lib/ipc";
 import type { Card } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import { parseBRL, cn } from "@/lib/utils";
@@ -86,7 +87,7 @@ export function CardDialog({
   const { t } = useTranslation();
   const create = useCreateCard();
   const update = useUpdateCard();
-  const del = useDeleteCard();
+  const del = useUndoableDeleteCard();
   // Init with empty state and let the effect below populate from `editing` when
   // the dialog opens. Avoids the brief first-render flash where the lazy
   // useState initializer captured a stale `editing` prop.
@@ -173,8 +174,12 @@ export function CardDialog({
     if (!editing) return;
     if (!window.confirm(t("dialog.card.delete_confirm"))) return;
     try {
-      await del.mutateAsync(editing.id);
-      toast.success(t("toast.card_deleted"));
+      // Snapshot the cascade footprint before delete so undo can rebuild the
+      // card AND every transaction it owned. Cheap fetch (the backend list
+      // returns the full table; cards rarely have >10k rows).
+      const allTxs = await ipc.transactions.list();
+      const cardTransactions = allTxs.filter((tx) => tx.cardId === editing.id);
+      await del.mutateAsync({ card: editing, cardTransactions });
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -135,6 +135,35 @@ pub fn transactions_remove(state: State<AppState>, id: String) -> AppResult<()> 
     with_conn(&state, |c| repo::transactions::remove(c, &id))
 }
 
+#[tauri::command]
+pub fn transactions_restore(
+    state: State<AppState>,
+    rows: Vec<Transaction>,
+) -> AppResult<usize> {
+    with_conn(&state, |c| repo::transactions::restore(c, &rows))
+}
+
+#[tauri::command]
+pub fn transactions_remove_by_import(
+    state: State<AppState>,
+    import_id: String,
+) -> AppResult<usize> {
+    with_conn(&state, |c| repo::transactions::remove_by_import(c, &import_id))
+}
+
+#[tauri::command]
+pub fn cards_restore(state: State<AppState>, card: Card) -> AppResult<Card> {
+    with_conn(&state, |c| repo::cards::restore(c, &card))
+}
+
+#[tauri::command]
+pub fn categories_restore(
+    state: State<AppState>,
+    category: Category,
+) -> AppResult<Category> {
+    with_conn(&state, |c| repo::categories::restore(c, &category))
+}
+
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkPatchInput {
@@ -237,6 +266,10 @@ pub struct ImportResult {
     pub inserted: usize,
     pub skipped: usize,
     pub total: usize,
+    /// Stamped on every row of this import; the undo flow uses it with
+    /// `transactions_remove_by_import` to roll the whole fatura back in
+    /// one shot.
+    pub import_id: String,
 }
 
 #[tauri::command]
@@ -441,7 +474,12 @@ pub fn import_commit(
             )?;
             inserted += 1;
         }
-        let summary = ImportResult { inserted, skipped, total };
+        let summary = ImportResult {
+            inserted,
+            skipped,
+            total,
+            import_id: import_id.clone(),
+        };
         tx.commit()?;
         Ok(summary)
     })();

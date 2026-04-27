@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { useCards, useCategories } from "@/lib/queries";
-import { useUpdateCard } from "@/lib/mutations";
+import { useUndoableImportCommit, useUpdateCard } from "@/lib/mutations";
 import { useImportStore } from "@/hooks/useImportStore";
 import { useCurrencyStore } from "@/hooks/useCurrencyStore";
-import { errorMessage, ipc, isTauri, type ImportRow } from "@/lib/ipc";
+import { errorMessage, isTauri, type ImportRow } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import {
   cn,
@@ -23,11 +22,11 @@ import {
 export function ImportPreview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const { rows, cardId, issuer, cardMetadata, rowMetadata, updateRow, clear } = useImportStore();
   const { data: cards } = useCards();
   const { data: categories } = useCategories();
   const updateCard = useUpdateCard();
+  const importCommit = useUndoableImportCommit();
   const formatMoney = useFormatMoney();
   const [metadataDismissed, setMetadataDismissed] = useState(false);
 
@@ -174,9 +173,9 @@ export function ImportPreview() {
         return;
       }
 
-      const result = await ipc.import.commit(cardId, payload);
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["monthSummary"] });
+      // The wrapper hook emits the success-with-undo toast and invalidates
+      // queries. Toast persists via Sonner across the navigation below.
+      await importCommit.mutateAsync({ cardId, rows: payload });
 
       // Pick the year-month that holds the most imported rows so the
       // Transactions screen opens already on the right page.
@@ -190,15 +189,7 @@ export function ImportPreview() {
         currentYearMonth();
 
       clear();
-      navigate("/transactions", {
-        state: {
-          ym: targetYm,
-          toast: t("toast.import_complete", {
-            inserted: result.inserted,
-            skipped: result.skipped,
-          }),
-        },
-      });
+      navigate("/transactions", { state: { ym: targetYm } });
     } catch (e) {
       setError(errorMessage(e));
     } finally {

@@ -15,8 +15,8 @@ import {
 } from "@/components/FilterDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
 import {
-  useBulkRemoveTransactions,
-  useBulkUpdateTransactions,
+  useUndoableBulkRemoveTransactions,
+  useUndoableBulkUpdateTransactions,
 } from "@/lib/mutations";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import type { Transaction } from "@/lib/ipc";
@@ -77,8 +77,8 @@ export function Transactions() {
   const { data: txs } = useTransactions({ yearMonth: ym, query, cardId: cardFilter ?? undefined });
   const { data: categories } = useCategories();
   const formatMoney = useFormatMoney();
-  const bulkUpdate = useBulkUpdateTransactions();
-  const bulkRemove = useBulkRemoveTransactions();
+  const bulkUpdate = useUndoableBulkUpdateTransactions();
+  const bulkRemove = useUndoableBulkRemoveTransactions();
   // Multi-select for the "manuseio" of statement rows: bulk-categorize
   // and bulk-delete from the Transactions table without opening each
   // edit dialog. Lives at the table level so changing month/filter
@@ -148,11 +148,8 @@ export function Transactions() {
   async function applyBulkCategorize(categoryId: string | null) {
     if (selectedIds.size === 0) return;
     try {
-      const count = await bulkUpdate.mutateAsync({
-        ids: [...selectedIds],
-        patch: { categoryId },
-      });
-      toast.success(t("toast.bulk_updated", { count }));
+      const rows = (txs ?? []).filter((x) => selectedIds.has(x.id));
+      await bulkUpdate.mutateAsync({ rows, patch: { categoryId } });
       clearSelection();
     } catch (e) {
       toast.fromError(e, t("toast.transaction_save_failed"));
@@ -163,8 +160,8 @@ export function Transactions() {
     if (selectedIds.size === 0) return;
     if (!window.confirm(t("transactions.bulk_delete_confirm", { count: selectedIds.size }))) return;
     try {
-      const count = await bulkRemove.mutateAsync([...selectedIds]);
-      toast.success(t("toast.bulk_removed", { count }));
+      const rows = (txs ?? []).filter((x) => selectedIds.has(x.id));
+      await bulkRemove.mutateAsync(rows);
       clearSelection();
     } catch (e) {
       toast.fromError(e, t("toast.transaction_delete_failed"));
