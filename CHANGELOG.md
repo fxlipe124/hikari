@@ -5,6 +5,36 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] — 2026-04-27
+
+### Fixed
+
+- **Multi-page Sofisa statements losing transactions on continuation
+  pages.** Real Sofisa exports print a per-section / per-page subtotal
+  ("Subtotal página 1") at the bottom of each page and a
+  "(continuação)" header at the top of the next page, often without
+  repeating the section header. The parser used to treat any
+  subtotal-like line as a hard end-of-section, so every transaction
+  on subsequent pages got dropped — statements rendered as one-page
+  excerpts. Two changes:
+  - "Subtotal" and "Resumo da fatura" no longer close the section
+    (they're per-section recap, not end-of-doc). Only the truly final
+    markers — "Total desta fatura", "Total da fatura", "Pagamento
+    mínimo", "Valor mínimo" — close it.
+  - "(continuação)" now restores the most recently active section if a
+    running-total footer happened to close it, so even faturas that
+    print "Total desta fatura" on every page footer parse correctly
+    end-to-end.
+  - Two new parser tests exercise both scenarios.
+
+### Changed
+
+- **Skip negative-amount rows on import** (Sofisa + generic parsers).
+  Lines with a leading `-` on the amount column are payments and
+  estornos that the bank already deducted from the bill — including
+  them as transactions doubled up math the user already saw in the
+  statement total. They no longer appear in the imported list.
+
 ## [0.1.4] — 2026-04-27
 
 ### Fixed
@@ -185,6 +215,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.5]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.5
 [0.1.4]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.4
 [0.1.3]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.3
 [0.1.2]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.2

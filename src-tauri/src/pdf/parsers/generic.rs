@@ -63,6 +63,13 @@ fn parse_line(
     let posted_at = normalize_date(date_raw, fallback_year, statement_year_month)?;
     let amount_cents = parse_brl_to_cents(amount_raw)?;
 
+    // Skip rows whose amount column starts with `-`. Same rule as the
+    // Sofisa parser — these are payments / credits the bank already
+    // deducted, not purchases the user made.
+    if amount_cents < 0 {
+        return None;
+    }
+
     let installment = INSTALLMENT_RE.captures(&desc).and_then(|c| {
         let (a, b) = if let (Some(a), Some(b)) = (c.get(1), c.get(2)) {
             (a, b)

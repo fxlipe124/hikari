@@ -121,6 +121,11 @@ pub fn parse(
 
     let mut out: Vec<ParsedTransaction> = Vec::new();
     let mut section = Section::None;
+    // Remember the most recent expense/refund section in case a per-page
+    // subtotal or running-total footer closes the section mid-statement.
+    // When the next page's "(continuação)" marker appears, we restore it
+    // so that transactions resuming without a fresh header still parse.
+    let mut last_active_section = Section::None;
 
     for raw_line in text.lines() {
         let line = raw_line.trim();
@@ -132,21 +137,28 @@ pub fn parse(
         // (substring of the generic expense header), then the generic header.
         if REFUND_HEADER.is_match(line) {
             section = Section::Refund;
+            last_active_section = section;
             continue;
         }
         if EXPENSE_VIRTUAL_HEADER.is_match(line) {
             section = Section::ExpenseVirtual;
+            last_active_section = section;
             continue;
         }
         if EXPENSE_HEADER.is_match(line) {
             section = Section::Expense;
+            last_active_section = section;
             continue;
         }
         if COLUMN_HEADER.is_match(line) {
             continue;
         }
 
-        // Footer markers close any active section.
+        // True end-of-statement markers. We deliberately do NOT close on
+        // "Subtotal" or "Resumo da fatura" because Sofisa prints those
+        // mid-document (per-section recap, page running total, etc.) and
+        // closing would drop every transaction on the next page when the
+        // section header isn't repeated.
         let lower = line.to_lowercase();
         if lower.contains("total desta fatura")
             || lower.contains("total da fatura")
@@ -154,18 +166,26 @@ pub fn parse(
             || lower.contains("valor minimo")
             || lower.contains("pagamento m\u{ED}nimo")
             || lower.contains("pagamento minimo")
-            || lower.starts_with("subtotal")
-            || lower.starts_with("resumo da fatura")
         {
             section = Section::None;
+            // Intentionally don't update last_active_section here — these
+            // markers really are end-of-doc, not page boundaries.
             continue;
         }
 
         // Pagination + continuation noise — skip without changing section.
+        // When "(continuação)" arrives and the section was closed by an
+        // earlier footer line on the previous page, restore it so the
+        // following rows aren't dropped just because a header wasn't
+        // repeated on the new page.
+        if lower.contains("(continua\u{E7}\u{E3}o)") || lower.contains("(continuacao)") {
+            if section == Section::None && last_active_section != Section::None {
+                section = last_active_section;
+            }
+            continue;
+        }
         if lower.starts_with("p\u{E1}gina ")
             || lower.starts_with("pagina ")
-            || lower.contains("(continua\u{E7}\u{E3}o)")
-            || lower.contains("(continuacao)")
             || lower.contains("n\u{E3}o houve movimenta")
             || lower.contains("nao houve movimenta")
         {
@@ -192,6 +212,17 @@ pub fn parse(
             Some(v) => v,
             None => continue,
         };
+
+        // Skip rows with a leading "-" on the amount column. On Sofisa
+        // statements those are payments ("PAG. EFETUADO REF. FAT. ANT.")
+        // and estornos that the bank already deducted from the bill —
+        // including them as transactions doubles up the math the user
+        // already sees in the running total. Rule per user request:
+        // "se tem um símbolo de - do lado do preço não devemos incluir
+        // na fatura".
+        if amount_cents < 0 {
+            continue;
+        }
 
         // Refunds get no parcela parsing — payments aren't installments and
         // their descriptions ("PAG. EFETUADO REF. FAT. ANT.") sometimes end
@@ -378,10 +409,11 @@ Data Transações Moeda Original Valor (R$)
     }
 
     #[test]
-    fn parses_refund_section() {
-        // Real fatura includes a "Pagamentos e Créditos" section before
-        // "Despesas Cartão". Its lines are payments/estornos — must be flagged
-        // as is_refund and stored as positive amounts.
+    fn skips_negative_amount_rows() {
+        // The "Pagamentos e Créditos" section lists payments/estornos
+        // that the bank already deducted from the bill. Per user
+        // preference these don't belong in the transactions list — the
+        // negative-amount filter drops them so only purchases survive.
         let text = r#"Detalhamento da Fatura
 Pagamentos e Créditos
 Data Transações Moeda Original Valor (R$)
@@ -392,18 +424,9 @@ Data Transações Moeda Original Valor (R$)
 12/07 PADARIA 45,80
 "#;
         let txs = parse(text, None, None).unwrap();
-        assert_eq!(txs.len(), 3);
-
-        assert!(txs[0].is_refund);
-        assert_eq!(txs[0].amount_cents, 123456);
-        assert!(txs[0].description.contains("PAG. EFETUADO"));
-        assert!(txs[0].installment.is_none(), "refund must not parse parcela");
-
-        assert!(txs[1].is_refund);
-        assert_eq!(txs[1].amount_cents, 8990);
-
-        assert!(!txs[2].is_refund);
-        assert_eq!(txs[2].description, "PADARIA");
+        assert_eq!(txs.len(), 1, "negative-amount rows must be filtered out");
+        assert_eq!(txs[0].description, "PADARIA");
+        assert!(!txs[0].is_refund);
     }
 
     #[test]
@@ -436,6 +459,52 @@ Data Transações Moeda Original Valor (R$)
         assert_eq!(txs.len(), 1);
         assert_eq!(txs[0].description, "PADARIA");
         assert!(!txs[0].is_virtual_card);
+    }
+
+    #[test]
+    fn subtotal_does_not_close_across_page_break() {
+        // Real Sofisa multi-page exports often print a running per-page
+        // subtotal at the bottom of each page and skip the section header
+        // on the continuation page (just shows "(continuação)"). The
+        // parser must keep the section live so the rows on page 2 still
+        // get associated with the right card.
+        let text = r#"Despesas Cartão - 1234 R$ 666,99
+Data Transações Moeda Original Valor (R$)
+12/07 PADARIA 45,80
+13/07 PADARIA 45,80
+Subtotal página 1 R$ 91,60
+Página 2 de 5
+Detalhamento da Fatura (continuação)
+14/07 PADARIA 45,80
+15/07 PADARIA 45,80
+"#;
+        let txs = parse(text, None, None).unwrap();
+        assert_eq!(
+            txs.len(),
+            4,
+            "all four PADARIA rows must parse — subtotal on a page break must not drop the next page",
+        );
+    }
+
+    #[test]
+    fn continuation_restores_section_after_total_footer() {
+        // Defensive case: even when a page footer prints "Total desta
+        // fatura R$ X" (running totals), the next page's "(continuação)"
+        // restores the previous section so we don't lose every row.
+        let text = r#"Despesas Cartão - 1234 R$ 666,99
+Data Transações Moeda Original Valor (R$)
+12/07 PADARIA 45,80
+Total desta fatura R$ 45,80
+Página 2 de 3
+Detalhamento da Fatura (continuação)
+13/07 PADARIA 45,80
+"#;
+        let txs = parse(text, None, None).unwrap();
+        assert_eq!(
+            txs.len(),
+            2,
+            "(continuação) must restore the previous section after a running total footer",
+        );
     }
 
     #[test]
