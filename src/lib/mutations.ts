@@ -180,3 +180,17 @@ export function useBulkUpdateTransactions() {
     },
   });
 }
+
+export function useBulkRemoveTransactions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]): Promise<number> => {
+      if (!isTauri) throw notInTauri();
+      return ipc.transactions.bulkRemove(ids);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["monthSummary"] });
+    },
+  });
+}

@@ -11,6 +11,7 @@
     "duplicate": "Duplicate",
     "dismiss": "Dismiss",
     "remove": "Remove",
+    "clear": "Clear",
     "create": "Create",
     "edit": "Edit",
     "waiting": "Waiting...",
@@ -158,7 +159,14 @@
     "manual_or_import": "Enter one manually or import a statement.",
     "installment_format": "installment {{index}}/{{total}}",
     "no_category_short": "no category",
-    "virtual_card_badge": "Virtual"
+    "virtual_card_badge": "Virtual",
+    "select_all": "Select all",
+    "select_row": "Select transaction",
+    "selected_count_one": "{{count}} selected",
+    "selected_count_other": "{{count}} selected",
+    "bulk_categorize": "Categorize as…",
+    "bulk_delete_confirm_one": "Delete {{count}} selected transaction?",
+    "bulk_delete_confirm_other": "Delete {{count}} selected transactions?"
   },
   "categories": {
     "subcategories_count_one": "{{count}} subcategory",
@@ -388,6 +396,8 @@
     "transaction_updated": "Transaction updated",
     "bulk_updated_one": "{{count}} other transaction updated",
     "bulk_updated_other": "{{count}} other transactions updated",
+    "bulk_removed_one": "{{count}} transaction removed",
+    "bulk_removed_other": "{{count}} transactions removed",
     "installments_created_one": "{{count}} installment created",
     "installments_created_other": "{{count}} installments created",
     "transaction_deleted": "Transaction deleted",

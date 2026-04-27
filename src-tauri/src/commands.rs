@@ -178,6 +178,14 @@ pub fn transactions_bulk_update(
 }
 
 #[tauri::command]
+pub fn transactions_bulk_remove(
+    state: State<AppState>,
+    ids: Vec<String>,
+) -> AppResult<usize> {
+    with_conn(&state, |c| repo::transactions::bulk_remove(c, &ids))
+}
+
+#[tauri::command]
 pub fn transactions_month_summary(
     state: State<AppState>,
     year_month: String,

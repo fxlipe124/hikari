@@ -11,6 +11,7 @@
     "duplicate": "Duplicar",
     "dismiss": "Dispensar",
     "remove": "Remover",
+    "clear": "Limpar",
     "create": "Criar",
     "edit": "Editar",
     "waiting": "Aguarde...",
@@ -158,7 +159,14 @@
     "manual_or_import": "Lance uma manualmente ou importe uma fatura.",
     "installment_format": "parcela {{index}}/{{total}}",
     "no_category_short": "sem categoria",
-    "virtual_card_badge": "Virtual"
+    "virtual_card_badge": "Virtual",
+    "select_all": "Selecionar todas",
+    "select_row": "Selecionar transação",
+    "selected_count_one": "{{count}} selecionada",
+    "selected_count_other": "{{count}} selecionadas",
+    "bulk_categorize": "Categorizar como…",
+    "bulk_delete_confirm_one": "Apagar {{count}} transação selecionada?",
+    "bulk_delete_confirm_other": "Apagar {{count}} transações selecionadas?"
   },
   "categories": {
     "subcategories_count_one": "{{count}} subcategoria",
@@ -388,6 +396,8 @@
     "transaction_updated": "Transação atualizada",
     "bulk_updated_one": "{{count}} outra transação atualizada",
     "bulk_updated_other": "{{count}} outras transações atualizadas",
+    "bulk_removed_one": "{{count}} transação apagada",
+    "bulk_removed_other": "{{count}} transações apagadas",
     "installments_created_one": "{{count}} parcela criada",
     "installments_created_other": "{{count}} parcelas criadas",
     "transaction_deleted": "Transação apagada",

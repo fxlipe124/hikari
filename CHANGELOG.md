@@ -5,6 +5,27 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] — 2026-04-27
+
+### Added
+
+- **Multi-select on the Transactions table.** Each row gets a
+  checkbox; the header has a "select all". When at least one row is
+  selected, a bulk-action bar appears above the table with two
+  actions:
+  - **Categorize as…** dropdown — applies the picked category (or
+    "no category") to every selected row in one IPC roundtrip.
+  - **Delete** — confirms then removes every selected row.
+  Selection clears when the month/filter changes (rows that left the
+  view are no longer relevant).
+
+### Changed
+
+- **Default sort** in the Transactions list flipped from newest-first
+  to oldest-first, so the statement reads top-to-bottom in the
+  chronological order the bank prints. The filter dialog still lets
+  you flip back to newest-first.
+
 ## [0.1.2] — 2026-04-27
 
 ### Added
@@ -144,6 +165,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.3]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.3
 [0.1.2]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.2
 [0.1.1]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.0

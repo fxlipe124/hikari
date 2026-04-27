@@ -39,7 +39,10 @@ export const emptyFilter: FilterState = {
   amountMax: "",
   postedFrom: "",
   postedTo: "",
-  sortBy: "date_desc",
+  // Default to oldest-first so the statement reads top-to-bottom in the
+  // chronological order the bank prints. The user can flip back via
+  // FilterDialog if they prefer "what happened today" up top.
+  sortBy: "date_asc",
 };
 
 export function countActiveFilters(f: FilterState): number {
@@ -51,7 +54,7 @@ export function countActiveFilters(f: FilterState): number {
   if (f.virtualOnly) n += 1;
   if (f.amountMin || f.amountMax) n += 1;
   if (f.postedFrom || f.postedTo) n += 1;
-  if (f.sortBy !== "date_desc") n += 1;
+  if (f.sortBy !== "date_asc") n += 1;
   return n;
 }
 

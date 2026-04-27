@@ -36,6 +36,7 @@ pub fn run() {
             commands::transactions_update,
             commands::transactions_remove,
             commands::transactions_bulk_update,
+            commands::transactions_bulk_remove,
             commands::transactions_month_summary,
             commands::import_extract_pdf,
             commands::import_parse,

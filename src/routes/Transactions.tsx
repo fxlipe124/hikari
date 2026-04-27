@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FileText, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { FileText, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { MonthPicker } from "@/components/ui/MonthPicker";
 import { TransactionDialog } from "@/components/TransactionDialog";
 import {
@@ -13,6 +14,10 @@ import {
   type FilterState,
 } from "@/components/FilterDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
+import {
+  useBulkRemoveTransactions,
+  useBulkUpdateTransactions,
+} from "@/lib/mutations";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import type { Transaction } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
@@ -72,6 +77,14 @@ export function Transactions() {
   const { data: txs } = useTransactions({ yearMonth: ym, query, cardId: cardFilter ?? undefined });
   const { data: categories } = useCategories();
   const formatMoney = useFormatMoney();
+  const bulkUpdate = useBulkUpdateTransactions();
+  const bulkRemove = useBulkRemoveTransactions();
+  // Multi-select for the "manuseio" of statement rows: bulk-categorize
+  // and bulk-delete from the Transactions table without opening each
+  // edit dialog. Lives at the table level so changing month/filter
+  // resets the selection — that's the right behavior because the rows
+  // disappear from view anyway.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   // Pop a forwarded toast (e.g. "X imported, Y skipped" from ImportPreview),
   // then clear the navigation state so a refresh doesn't replay it.
@@ -118,6 +131,45 @@ export function Transactions() {
     });
     return sorted;
   }, [txs, filter]);
+
+  function toggleRow(id: string) {
+    setSelectedIds((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function applyBulkCategorize(categoryId: string | null) {
+    if (selectedIds.size === 0) return;
+    try {
+      const count = await bulkUpdate.mutateAsync({
+        ids: [...selectedIds],
+        patch: { categoryId },
+      });
+      toast.success(t("toast.bulk_updated", { count }));
+      clearSelection();
+    } catch (e) {
+      toast.fromError(e, t("toast.transaction_save_failed"));
+    }
+  }
+
+  async function applyBulkDelete() {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(t("transactions.bulk_delete_confirm", { count: selectedIds.size }))) return;
+    try {
+      const count = await bulkRemove.mutateAsync([...selectedIds]);
+      toast.success(t("toast.bulk_removed", { count }));
+      clearSelection();
+    } catch (e) {
+      toast.fromError(e, t("toast.transaction_delete_failed"));
+    }
+  }
 
   const total = useMemo(
     // Mirror the backend monthSummary: refunds subtract from the running
@@ -203,10 +255,85 @@ export function Transactions() {
         </div>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="border-b border-border bg-accent/5 px-6 py-2 flex items-center gap-3">
+          <span className="text-xs font-medium text-accent">
+            {t("transactions.selected_count", { count: selectedIds.size })}
+          </span>
+          <Select
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") return;
+              applyBulkCategorize(v === "__none__" ? null : v);
+              e.target.value = "";
+            }}
+            className="h-7 px-2 text-xs"
+            disabled={bulkUpdate.isPending || bulkRemove.isPending}
+          >
+            <option value="">{t("transactions.bulk_categorize")}</option>
+            <option value="__none__">{t("form.option.no_category")}</option>
+            {(categories ?? [])
+              .filter((c) => !c.parentId)
+              .map((root) => {
+                const children = (categories ?? []).filter((c) => c.parentId === root.id);
+                return [
+                  <option key={root.id} value={root.id}>
+                    {t(`category.${root.id}`, { defaultValue: root.name })}
+                  </option>,
+                  ...children.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {"  ↳  "}
+                      {t(`category.${c.id}`, { defaultValue: c.name })}
+                    </option>
+                  )),
+                ];
+              })
+              .flat()}
+          </Select>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={applyBulkDelete}
+            disabled={bulkRemove.isPending || bulkUpdate.isPending}
+            className="text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t("common.delete")}
+          </Button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="ml-auto text-xs text-fg-subtle hover:text-fg flex items-center gap-1"
+          >
+            <X className="h-3 w-3" />
+            {t("common.clear")}
+          </button>
+        </div>
+      )}
+
       <table className="w-full">
         <thead className="sticky top-0 bg-surface border-b border-border">
           <tr className="text-xs text-fg-muted">
-            <th className="pl-6 pr-3 py-2 text-left font-medium w-[72px] whitespace-nowrap">{t("table.header.date")}</th>
+            <th className="pl-6 pr-2 py-2 w-8 text-left">
+              <input
+                type="checkbox"
+                checked={
+                  filteredTxs.length > 0 &&
+                  filteredTxs.every((tx) => selectedIds.has(tx.id))
+                }
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedIds(new Set(filteredTxs.map((tx) => tx.id)));
+                  } else {
+                    clearSelection();
+                  }
+                }}
+                className="h-3.5 w-3.5 accent-accent cursor-pointer"
+                aria-label={t("transactions.select_all")}
+              />
+            </th>
+            <th className="px-2 py-2 text-left font-medium w-[72px] whitespace-nowrap">{t("table.header.date")}</th>
             <th className="py-2 text-left font-medium">{t("table.header.description")}</th>
             <th className="px-3 py-2 text-left font-medium w-36">{t("table.header.category")}</th>
             <th className="px-3 py-2 text-left font-medium w-32">{t("table.header.card")}</th>
@@ -216,7 +343,7 @@ export function Transactions() {
         <tbody>
           {filteredTxs.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-6 py-16">
+              <td colSpan={6} className="px-6 py-16">
                 <div className="flex flex-col items-center justify-center gap-3 text-center">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-fg-subtle">
                     <FileText className="h-4 w-4" />
@@ -246,13 +373,33 @@ export function Transactions() {
           {filteredTxs.map((tx) => {
             const card = cards?.find((c) => c.id === tx.cardId);
             const cat = categories?.find((c) => c.id === tx.categoryId);
+            const isSelected = selectedIds.has(tx.id);
             return (
               <tr
                 key={tx.id}
                 onClick={() => setEditing(tx)}
-                className="border-b border-border hover:bg-surface-hover transition-colors cursor-pointer"
+                className={cn(
+                  "border-b border-border transition-colors cursor-pointer",
+                  isSelected ? "bg-accent/5" : "hover:bg-surface-hover",
+                )}
               >
-                <td className="pl-6 pr-3 py-2 text-xs text-fg-muted tabular whitespace-nowrap">
+                <td
+                  className="pl-6 pr-2 py-2"
+                  onClick={(e) => {
+                    // Click on the checkbox cell only toggles selection — never
+                    // open the edit dialog.
+                    e.stopPropagation();
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleRow(tx.id)}
+                    className="h-3.5 w-3.5 accent-accent cursor-pointer"
+                    aria-label={t("transactions.select_row")}
+                  />
+                </td>
+                <td className="px-2 py-2 text-xs text-fg-muted tabular whitespace-nowrap">
                   {formatDate(tx.postedAt, "day")}
                 </td>
                 <td className="py-2 min-w-0">

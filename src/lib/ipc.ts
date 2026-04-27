@@ -235,6 +235,8 @@ export const ipc = {
         ids,
         patch,
       }),
+    bulkRemove: (ids: string[]) =>
+      invoke<number>("transactions_bulk_remove", { ids }),
     monthSummary: (yearMonth: string, cardId?: string) =>
       invoke<{ totalCents: number; byCategory: Array<{ categoryId: string | null; totalCents: number }>; byCard: Array<{ cardId: string; totalCents: number }> }>(
         "transactions_month_summary",

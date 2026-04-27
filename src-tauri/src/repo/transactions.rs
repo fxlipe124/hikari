@@ -262,6 +262,21 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Delete a batch of transactions in one prepared-statement loop. Used
+/// by the multi-select toolbar in the Transactions page so the user
+/// can clear a stack of imported test rows in one click.
+pub fn bulk_remove(conn: &Connection, ids: &[String]) -> AppResult<usize> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let mut stmt = conn.prepare("DELETE FROM transactions WHERE id = ?")?;
+    let mut count = 0usize;
+    for id in ids {
+        count += stmt.execute([id])?;
+    }
+    Ok(count)
+}
+
 /// What to apply to every row in `ids`. Each `Some` field is patched;
 /// each `None` is left alone. Used by the BulkApplyDialog follow-up
 /// after a single edit to propagate description/merchant_clean and/or
