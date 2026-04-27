@@ -129,7 +129,8 @@
     "recent_transactions": "Transações recentes",
     "add_card_prompt": "Cadastre um cartão",
     "limit_usage": "{{pct}}% de {{limit}}",
-    "year_by_month": "Gastos por mês"
+    "year_by_month": "Gastos por mês",
+    "year_total_label": "Total de {{year}}"
   },
   "import_preview": {
     "reference_year": "Ano",

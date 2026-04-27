@@ -436,14 +436,24 @@ export function Dashboard() {
           <Card className="col-span-2">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>{t("dashboard.cards_section")}</CardTitle>
-              <span className="text-xs text-fg-subtle">{t("dashboard.current_statement")}</span>
+              <span className="text-xs text-fg-subtle">
+                {mode === "year"
+                  ? t("dashboard.year_total_label", { year })
+                  : t("dashboard.current_statement")}
+              </span>
             </CardHeader>
             <CardContent className="space-y-3">
               {(cards ?? []).map((card) => {
                 const entry = summary?.byCard.find((b) => b.cardId === card.id);
                 const used = entry?.totalCents ?? 0;
                 const limit = card.creditLimitCents ?? 0;
-                const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                // Credit-limit % only makes sense against a single statement;
+                // a year aggregate routinely exceeds the monthly limit, so
+                // the bar would always show 100% and the % would mislead.
+                const showLimitMeter = mode === "month" && limit > 0;
+                const pct = showLimitMeter
+                  ? Math.min(100, Math.round((used / limit) * 100))
+                  : 0;
                 return (
                   <div key={card.id} className="space-y-1.5">
                     <div className="flex items-center justify-between">
@@ -463,14 +473,14 @@ export function Dashboard() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm tabular font-medium">{formatMoney(used)}</div>
-                        {limit > 0 && (
+                        {showLimitMeter && (
                           <div className="text-[10px] text-fg-subtle tabular">
                             {t("dashboard.limit_usage", { pct, limit: formatMoney(limit) })}
                           </div>
                         )}
                       </div>
                     </div>
-                    {limit > 0 && (
+                    {showLimitMeter && (
                       <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
                         <div
                           className="h-full rounded-full"
