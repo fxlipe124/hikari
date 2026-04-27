@@ -42,17 +42,22 @@ export interface BulkChange {
 }
 
 /**
- * Follow-up modal that opens after the user edits a single transaction
- * and changes one or more fields that typically apply across related
- * rows (description/merchant_clean for renames, category_id for
- * bulk-categorization). Lists candidates with checkboxes — defaults all
- * checked, since the common case is "apply everywhere".
+ * Follow-up modal for cascading a single-row edit onto related rows.
+ * Two intents:
+ *   - "apply" (default): rename / categorize cascade after a save.
+ *     Caller's onApply hits transactions_bulk_update.
+ *   - "delete": cascade a deletion. Caller's onApply hits
+ *     transactions_bulk_remove. The button turns danger-red and the
+ *     copy says "Delete N selected" instead of "Apply".
+ * Defaults all candidates checked since the common case is
+ * "apply / delete everywhere".
  */
 export function BulkApplyDialog({
   open,
   onOpenChange,
   candidates,
   change,
+  intent = "apply",
   onApply,
   busy,
 }: {
@@ -60,6 +65,7 @@ export function BulkApplyDialog({
   onOpenChange: (open: boolean) => void;
   candidates: BulkCandidate[];
   change: BulkChange;
+  intent?: "apply" | "delete";
   onApply: (selectedIds: string[]) => Promise<void>;
   busy?: boolean;
 }) {
@@ -123,11 +129,16 @@ export function BulkApplyDialog({
   const summary = summaryParts.join(" · ");
   const hasRename = change.description != null || change.merchantClean !== undefined;
   const hasCategory = change.categoryId !== undefined;
-  const titleKey = hasRename && hasCategory
-    ? "bulk_apply.title_combined"
-    : hasCategory
-      ? "bulk_apply.title_category"
-      : "bulk_apply.title_rename";
+  const titleKey =
+    intent === "delete"
+      ? "bulk_apply.title_delete"
+      : hasRename && hasCategory
+        ? "bulk_apply.title_combined"
+        : hasCategory
+          ? "bulk_apply.title_category"
+          : "bulk_apply.title_rename";
+  const subtitleKey =
+    intent === "delete" ? "bulk_apply.subtitle_delete" : "bulk_apply.subtitle";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,7 +146,7 @@ export function BulkApplyDialog({
         <DialogHeader>
           <DialogTitle>{t(titleKey)}</DialogTitle>
           <DialogDescription>
-            {t("bulk_apply.subtitle", { summary })}
+            {t(subtitleKey, { summary })}
           </DialogDescription>
         </DialogHeader>
 
@@ -193,10 +204,17 @@ export function BulkApplyDialog({
             size="sm"
             onClick={() => onApply([...selected])}
             disabled={busy || selected.size === 0}
+            className={
+              intent === "delete"
+                ? "bg-danger text-danger-fg hover:bg-danger/90"
+                : undefined
+            }
           >
             {busy
               ? t("common.saving")
-              : t("bulk_apply.apply", { count: selected.size })}
+              : intent === "delete"
+                ? t("bulk_apply.delete_action", { count: selected.size })
+                : t("bulk_apply.apply", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

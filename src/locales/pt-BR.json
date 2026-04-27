@@ -131,7 +131,9 @@
     "title_rename": "Aplicar renomeação a transações relacionadas?",
     "title_category": "Aplicar categoria a transações relacionadas?",
     "title_combined": "Aplicar mudanças a transações relacionadas?",
+    "title_delete": "Apagar esta transação e relacionadas?",
     "subtitle": "A aplicar: {{summary}}. Escolha quais linhas relacionadas devem acompanhar.",
+    "subtitle_delete": "Esta linha será apagada. Marque também as linhas relacionadas que quiser apagar junto.",
     "summary_rename": "renomear para \"{{name}}\"",
     "summary_category": "categorizar como {{category}}",
     "summary_no_category": "(sem categoria)",
@@ -139,7 +141,9 @@
     "section_same_name": "Outras transações com o mesmo nome",
     "skip": "Pular",
     "apply_one": "Aplicar a {{count}}",
-    "apply_other": "Aplicar a {{count}}"
+    "apply_other": "Aplicar a {{count}}",
+    "delete_action_one": "Apagar esta + {{count}}",
+    "delete_action_other": "Apagar esta + {{count}}"
   },
   "stats": {
     "month_total": "Total do mês",

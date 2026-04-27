@@ -131,7 +131,9 @@
     "title_rename": "Apply rename to related transactions?",
     "title_category": "Apply category to related transactions?",
     "title_combined": "Apply changes to related transactions?",
+    "title_delete": "Delete this transaction and related ones?",
     "subtitle": "Pending: {{summary}}. Pick which related rows should follow.",
+    "subtitle_delete": "This row will be deleted. Pick any related rows you also want to delete.",
     "summary_rename": "rename to \"{{name}}\"",
     "summary_category": "categorize as {{category}}",
     "summary_no_category": "(no category)",
@@ -139,7 +141,9 @@
     "section_same_name": "Other transactions with the same name",
     "skip": "Skip",
     "apply_one": "Apply to {{count}}",
-    "apply_other": "Apply to {{count}}"
+    "apply_other": "Apply to {{count}}",
+    "delete_action_one": "Delete this + {{count}}",
+    "delete_action_other": "Delete this + {{count}}"
   },
   "stats": {
     "month_total": "Month total",

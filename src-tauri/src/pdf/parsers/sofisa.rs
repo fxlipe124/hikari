@@ -196,6 +196,15 @@ pub fn parse(
             continue;
         }
 
+        // The "Pagamentos e Créditos" section is exclusively payments
+        // (PAG. EFETUADO) and estornos — money flow with the bank, not
+        // purchases the user made. Skip it wholesale instead of relying
+        // on the negative-amount check below, since some statements
+        // print credits as positive values (cashback, reward credits).
+        if section == Section::Refund {
+            continue;
+        }
+
         let caps = match TX_LINE.captures(line) {
             Some(c) => c,
             None => continue,
@@ -213,13 +222,10 @@ pub fn parse(
             None => continue,
         };
 
-        // Skip rows with a leading "-" on the amount column. On Sofisa
-        // statements those are payments ("PAG. EFETUADO REF. FAT. ANT.")
-        // and estornos that the bank already deducted from the bill —
-        // including them as transactions doubles up the math the user
-        // already sees in the running total. Rule per user request:
-        // "se tem um símbolo de - do lado do preço não devemos incluir
-        // na fatura".
+        // Defense in depth: even within an expense section, a leading
+        // "-" on the amount column means an estorno that the bank
+        // already deducted. Skip per user rule: "se tem um símbolo de
+        // - do lado do preço não devemos incluir na fatura".
         if amount_cents < 0 {
             continue;
         }

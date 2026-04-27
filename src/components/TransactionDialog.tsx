@@ -20,6 +20,7 @@ import {
 } from "@/components/BulkApplyDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
 import {
+  useBulkRemoveTransactions,
   useBulkUpdateTransactions,
   useCreateTransaction,
   useDeleteTransaction,
@@ -168,6 +169,7 @@ export function TransactionDialog({
   const update = useUpdateTransaction();
   const del = useDeleteTransaction();
   const bulkUpdate = useBulkUpdateTransactions();
+  const bulkRemove = useBulkRemoveTransactions();
 
   const [form, setForm] = useState<FormState>(() =>
     editing ? fromTx(editing) : emptyForm(cards?.[0]?.id ?? null)
@@ -176,10 +178,15 @@ export function TransactionDialog({
 
   // Follow-up modal state. Set after a save where description/merchantClean
   // and/or categoryId changed AND there are related rows to offer the same
-  // change to.
+  // change to. Also reused on delete to offer cascading the deletion across
+  // related parcelas / same-name rows — `intent` switches dialog copy and
+  // the action callback.
   const [bulkContext, setBulkContext] = useState<{
     candidates: BulkCandidate[];
     change: BulkChange;
+    intent: "apply" | "delete";
+    /** For delete: the editing row's id, deleted alongside selected ones. */
+    primaryId?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -332,7 +339,7 @@ export function TransactionDialog({
           const candidates =
             renamed || recategorized ? findBulkCandidates(editing, allTxs ?? []) : [];
           if (candidates.length > 0) {
-            setBulkContext({ candidates, change });
+            setBulkContext({ candidates, change, intent: "apply" });
             toast.success(t("toast.transaction_updated"));
             // Keep the editor dialog open beneath; BulkApplyDialog stacks
             // on top. Once the user picks an option there, we close both.
@@ -370,6 +377,21 @@ export function TransactionDialog({
 
   async function onDelete() {
     if (!editing) return;
+    // If there are related rows (other parcelas of the same purchase, or
+    // other transactions with the same name), defer the delete to
+    // BulkApplyDialog with intent="delete" so the user can pick which
+    // related rows to drop alongside this one. With no candidates we fall
+    // back to the simple confirm-then-delete flow.
+    const candidates = findBulkCandidates(editing, allTxs ?? []);
+    if (candidates.length > 0) {
+      setBulkContext({
+        candidates,
+        change: {},
+        intent: "delete",
+        primaryId: editing.id,
+      });
+      return;
+    }
     if (!window.confirm(t("dialog.transaction.delete_confirm"))) return;
     try {
       await del.mutateAsync(editing.id);
@@ -431,12 +453,30 @@ export function TransactionDialog({
 
   async function applyBulkChange(selectedIds: string[]) {
     if (!bulkContext) return;
-    if (selectedIds.length === 0) {
-      setBulkContext(null);
-      onOpenChange(false);
-      return;
-    }
     try {
+      if (bulkContext.intent === "delete") {
+        // Delete the editing row plus any related rows the user kept
+        // checked. Even if nothing else is selected we still want the
+        // primary row gone — that's what the user clicked Delete for.
+        const ids = bulkContext.primaryId
+          ? [bulkContext.primaryId, ...selectedIds]
+          : selectedIds;
+        if (ids.length === 0) {
+          setBulkContext(null);
+          onOpenChange(false);
+          return;
+        }
+        const count = await bulkRemove.mutateAsync(ids);
+        toast.success(t("toast.bulk_removed", { count }));
+        setBulkContext(null);
+        onOpenChange(false);
+        return;
+      }
+      if (selectedIds.length === 0) {
+        setBulkContext(null);
+        onOpenChange(false);
+        return;
+      }
       const change = bulkContext.change;
       // Strip the display-only categoryLabel before sending to the
       // backend — it's not a column.
@@ -643,8 +683,9 @@ export function TransactionDialog({
         }}
         candidates={bulkContext.candidates}
         change={bulkContext.change}
+        intent={bulkContext.intent}
         onApply={applyBulkChange}
-        busy={bulkUpdate.isPending}
+        busy={bulkUpdate.isPending || bulkRemove.isPending}
       />
     )}
   </>);

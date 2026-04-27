@@ -5,6 +5,27 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.6] — 2026-04-27
+
+### Added
+
+- **Delete cascade on transaction edit.** Clicking Delete on a row
+  with related transactions (other parcelas of the same purchase, or
+  other rows with the same merchant name) now opens the same
+  BulkApply dialog used for the rename and category cascades, in
+  delete mode: red action button, "Delete this + N selected" copy,
+  defaults all candidates checked. With no related rows the dialog
+  is skipped and the existing simple confirm runs.
+
+### Changed
+
+- **Skip the entire `Pagamentos e Créditos` section** on Sofisa
+  imports, regardless of amount sign. Even when a payment shows up
+  as a positive value (cashback, reward credits), the section is
+  always money flow with the bank, never a purchase the user made.
+  v0.1.5 already filtered negative amounts; this closes the gap for
+  the rare positive-amount payment lines too.
+
 ## [0.1.5] — 2026-04-27
 
 ### Fixed
@@ -215,6 +236,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.6]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.6
 [0.1.5]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.5
 [0.1.4]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.4
 [0.1.3]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.3
