@@ -67,7 +67,7 @@ function Stat({
 }
 
 export function Dashboard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   // Period state lives in a tiny zustand store shared with the Transactions
   // route, so navigating between the two — or popping a sub-dialog and
@@ -132,16 +132,19 @@ export function Dashboard() {
   }, [summary, categories, t]);
 
   // Month-by-month bar data for the year view. Empty array in month mode —
-  // the bar chart isn't rendered there.
+  // the bar chart isn't rendered there. Uses the active i18n locale for the
+  // month abbreviation so the chart axis matches the rest of the UI (e.g.
+  // "fev" instead of "Feb" in pt-BR mode).
   const monthsBar = useMemo(() => {
     if (mode !== "year" || !yearSummary) return [];
+    const fmt = new Intl.DateTimeFormat(i18n.language, { month: "short" });
     return yearSummary.byMonth.map((b) => {
       const monthIdx = parseInt(b.yearMonth.slice(5, 7), 10) - 1;
       const date = new Date(year, monthIdx, 1);
-      const label = new Intl.DateTimeFormat("en", { month: "short" }).format(date);
+      const label = fmt.format(date);
       return { ym: b.yearMonth, label, total: b.totalCents };
     });
-  }, [mode, yearSummary, year]);
+  }, [mode, yearSummary, year, i18n.language]);
 
   const recent = useMemo(() => (txs ?? []).slice(0, 8), [txs]);
 
