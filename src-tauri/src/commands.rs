@@ -135,15 +135,45 @@ pub fn transactions_remove(state: State<AppState>, id: String) -> AppResult<()> 
     with_conn(&state, |c| repo::transactions::remove(c, &id))
 }
 
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkPatchInput {
+    /// `Some(s)` rename to s; `None` leave description alone.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// `Some(Some(s))` set merchant_clean to s; `Some(None)` clear it;
+    /// `None` (the field absent) leave it alone. Mirror the semantics for
+    /// category_id below.
+    #[serde(default, deserialize_with = "deserialize_explicit_option")]
+    pub merchant_clean: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_explicit_option")]
+    pub category_id: Option<Option<String>>,
+}
+
+/// Lets us tell apart "field absent" from "field present and null" in a
+/// JSON patch. serde-json's default `Option<T>` flattens both to None.
+fn deserialize_explicit_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    use serde::Deserialize;
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 #[tauri::command]
-pub fn transactions_bulk_rename(
+pub fn transactions_bulk_update(
     state: State<AppState>,
     ids: Vec<String>,
-    description: String,
-    merchant_clean: Option<String>,
+    patch: BulkPatchInput,
 ) -> AppResult<usize> {
     with_conn(&state, |c| {
-        repo::transactions::bulk_rename(c, &ids, &description, merchant_clean.as_deref())
+        let bp = repo::transactions::BulkPatch {
+            description: patch.description.as_deref(),
+            merchant_clean: patch.merchant_clean.as_ref().map(|o| o.as_deref()),
+            category_id: patch.category_id.as_ref().map(|o| o.as_deref()),
+        };
+        repo::transactions::bulk_update(c, &ids, &bp)
     })
 }
 

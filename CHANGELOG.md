@@ -5,6 +5,51 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] — 2026-04-27
+
+### Added
+
+- **Category cascade** on transaction edit. Assigning a category to one
+  row now offers to apply it to other parcelas of the same purchase and
+  to other rows with the same merchant name — same UX as the existing
+  rename cascade. Combined renames + categorizations show one merged
+  prompt.
+- **Persistent view month**. Switching between Dashboard and
+  Transactions, or popping a sub-dialog and coming back, no longer
+  snaps the month picker to "today". Persists for the session; resets
+  on app restart / vault relock.
+
+### Fixed
+
+- **`[object Object]` error toast** on import failures. The IPC bridge
+  surfaces errors as `{code, message}` objects and the call sites were
+  passing them through `String()`. New shared helper
+  `errorMessage(e)` extracts a human-readable string instead.
+- **Statement-period reset on card switch in import**. Picking a
+  different card no longer overwrites a month the user already
+  adjusted; auto-snap only fires on the very first card pick of an
+  import session.
+- **Parcela rows landing in the wrong fatura.** Sofisa prints the
+  *original purchase date* on every parcela of a multi-month plan
+  (parcela 2/10 of an Aug 2024 purchase shows up dated `04/07` in the
+  Sep statement). The ImportPreview commit was computing
+  `statement_year_month` from `posted_at + closing_day`, which
+  silently grouped `04/07` into the August fatura even when the row
+  belonged to the September import. Now the parser's own
+  `statement_year_month` (extracted from the Sofisa header `compras
+  e pagamentos feitos até DD/MM/YYYY`) wins, with the closing-day
+  pivot only used as a fallback for non-Sofisa or paste imports.
+
+### Changed
+
+- `transactions_bulk_rename` IPC merged into `transactions_bulk_update`
+  with optional `description`, `merchant_clean`, and `category_id`
+  patch fields — internal refactor to support the category cascade
+  above.
+- Multi-PDF import picker label switches to "Starting statement"
+  (with a clarifying hint) when more than one file is queued, since
+  each PDF carries its own header.
+
 ## [0.1.1] — 2026-04-27
 
 First incremental release on top of the sealed `v0.1.0`.
@@ -99,5 +144,6 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.2]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.2
 [0.1.1]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.0

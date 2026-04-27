@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { MonthPicker } from "@/components/ui/MonthPicker";
 import { CardDialog } from "@/components/CardDialog";
 import { useCards, useCategories, useMonthSummary, useTransactions } from "@/lib/queries";
-import { cn, currentYearMonth, formatDate, monthLabel, useFormatMoney } from "@/lib/utils";
+import { useViewMonthStore } from "@/hooks/useViewMonthStore";
+import { cn, formatDate, monthLabel, useFormatMoney } from "@/lib/utils";
 
 function MonthHeader({
   ym,
@@ -64,10 +65,12 @@ function Stat({
 export function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  // Stateful month so the dashboard can browse historical statements. Without
-  // this, charts are silently empty whenever the user's most recent imports
-  // belong to any month other than the current one.
-  const [ym, setYm] = useState(currentYearMonth());
+  // Month state lives in a tiny zustand store shared with the Transactions
+  // route, so navigating between the two — or popping a sub-dialog and
+  // coming back — doesn't snap us back to "today". Cleared on app
+  // restart / vault relock, where "today" is the right default.
+  const ym = useViewMonthStore((s) => s.ym);
+  const setYm = useViewMonthStore((s) => s.setYm);
   // When a card is selected, the month picker becomes a "statement period"
   // picker (closing-day-aware) — that's the user's mental model. With "all
   // cards", we fall back to calendar month since multi-card statements have

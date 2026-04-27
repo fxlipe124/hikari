@@ -126,9 +126,14 @@
     "detected_card_metadata_hint": "Card is set to closing {{cardClosing}} / due {{cardDue}}. Update to match this statement?",
     "update_card": "Update card"
   },
-  "bulk_rename": {
-    "title": "Apply rename to related transactions?",
-    "subtitle": "You renamed this purchase to \"{{name}}\". Want to apply the same name to the rows below?",
+  "bulk_apply": {
+    "title_rename": "Apply rename to related transactions?",
+    "title_category": "Apply category to related transactions?",
+    "title_combined": "Apply changes to related transactions?",
+    "subtitle": "Pending: {{summary}}. Pick which related rows should follow.",
+    "summary_rename": "rename to \"{{name}}\"",
+    "summary_category": "categorize as {{category}}",
+    "summary_no_category": "(no category)",
     "section_installments": "Other parcelas of this purchase",
     "section_same_name": "Other transactions with the same name",
     "skip": "Skip",
@@ -233,6 +238,8 @@
     "statement_year_hint": "Used when the statement only has DD/MM dates without an explicit year.",
     "statement_period": "Statement period",
     "statement_period_hint": "Closing month of this statement. The card's closing day decides which calendar year/month each DD/MM row belongs to.",
+    "starting_period": "Starting statement",
+    "starting_period_hint": "Closing month of the earliest statement in this batch — only used as a fallback when a PDF's own header isn't recognized. Each PDF's parser-detected period takes precedence.",
     "issuer": {
       "sofisa": "Sofisa Direto",
       "mercado_pago": "Mercado Pago",
@@ -379,8 +386,8 @@
     "transaction_created": "Transaction created",
     "transaction_duplicated": "Transaction duplicated",
     "transaction_updated": "Transaction updated",
-    "bulk_renamed_one": "{{count}} other transaction renamed",
-    "bulk_renamed_other": "{{count}} other transactions renamed",
+    "bulk_updated_one": "{{count}} other transaction updated",
+    "bulk_updated_other": "{{count}} other transactions updated",
     "installments_created_one": "{{count}} installment created",
     "installments_created_other": "{{count}} installments created",
     "transaction_deleted": "Transaction deleted",

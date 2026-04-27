@@ -25,6 +25,23 @@ export function isIpcError(e: unknown): e is IpcError {
   );
 }
 
+/**
+ * Pull a human-readable message out of anything thrown by an IPC call.
+ * The Tauri bridge surfaces errors as plain `{code, message}` objects, so
+ * `String(e)` gives the dreaded "[object Object]" — extract `e.message`
+ * (or the JS Error message) explicitly.
+ */
+export function errorMessage(e: unknown): string {
+  if (isIpcError(e)) return e.message;
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 export type VaultState =
   | { kind: "locked"; path: string | null }
   | { kind: "unlocked"; path: string; openedAt: string };
@@ -206,15 +223,17 @@ export const ipc = {
     update: (id: string, patch: Partial<Transaction>) =>
       invoke<Transaction>("transactions_update", { id, patch }),
     remove: (id: string) => invoke<void>("transactions_remove", { id }),
-    bulkRename: (
+    bulkUpdate: (
       ids: string[],
-      description: string,
-      merchantClean: string | null,
+      patch: {
+        description?: string;
+        merchantClean?: string | null;
+        categoryId?: string | null;
+      },
     ) =>
-      invoke<number>("transactions_bulk_rename", {
+      invoke<number>("transactions_bulk_update", {
         ids,
-        description,
-        merchantClean,
+        patch,
       }),
     monthSummary: (yearMonth: string, cardId?: string) =>
       invoke<{ totalCents: number; byCategory: Array<{ categoryId: string | null; totalCents: number }>; byCard: Array<{ cardId: string; totalCents: number }> }>(

@@ -157,20 +157,22 @@ export function useDeleteTransaction() {
   });
 }
 
-export function useBulkRenameTransactions() {
+export function useBulkUpdateTransactions() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
       ids,
-      description,
-      merchantClean,
+      patch,
     }: {
       ids: string[];
-      description: string;
-      merchantClean: string | null;
+      patch: {
+        description?: string;
+        merchantClean?: string | null;
+        categoryId?: string | null;
+      };
     }): Promise<number> => {
       if (!isTauri) throw notInTauri();
-      return ipc.transactions.bulkRename(ids, description, merchantClean);
+      return ipc.transactions.bulkUpdate(ids, patch);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });

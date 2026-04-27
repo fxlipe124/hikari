@@ -19,6 +19,7 @@ import {
   ipc,
   isTauri,
   isIpcError,
+  errorMessage,
   type CardMetadata,
   type ParsedTransaction,
 } from "@/lib/ipc";
@@ -116,22 +117,35 @@ export function ImportDialog({
     setNeedsPassword(false);
     setCardId(null);
     setReferenceYearMonth(currentYearMonth());
+    setPeriodAutoFilled(false);
     setProgress(null);
     setError(null);
     setMode("paste");
   };
 
-  // Picking a card snaps the default statement period to *that card's*
-  // current open statement (today + closing_day). Without this, the user
-  // would have to manually adjust the picker every time they switch cards.
+  // Picking a card used to snap the period to *that card's* current open
+  // statement, but that clobbered any month the user had already adjusted
+  // (e.g. someone catching up on July, then realizing they picked the
+  // wrong card, would lose their July pick). Now we only auto-snap on the
+  // very first card pick of an import session — once the user touches the
+  // picker (or after a card was already selected), we leave the period
+  // alone.
+  const [periodAutoFilled, setPeriodAutoFilled] = useState(false);
   const onCardPick = (id: string) => {
     setCardId(id);
-    const card = (cards ?? []).find((c) => c.id === id);
-    if (card) {
-      const today = new Date();
-      const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      setReferenceYearMonth(statementPeriod(todayIso, card.closingDay));
+    if (cardId === null && !periodAutoFilled) {
+      const card = (cards ?? []).find((c) => c.id === id);
+      if (card) {
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        setReferenceYearMonth(statementPeriod(todayIso, card.closingDay));
+        setPeriodAutoFilled(true);
+      }
     }
+  };
+  const onPeriodChange = (ym: string) => {
+    setReferenceYearMonth(ym);
+    setPeriodAutoFilled(true); // user touched it → never auto-snap again
   };
 
   const canSubmit =
@@ -255,7 +269,7 @@ export function ImportDialog({
       reset();
       navigate("/import-preview");
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
       setProgress(null);
@@ -311,15 +325,19 @@ export function ImportDialog({
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-fg-muted">
-                {t("import.statement_period")}
+                {pdfFiles.length > 1
+                  ? t("import.starting_period")
+                  : t("import.statement_period")}
               </label>
               <MonthPicker
                 value={referenceYearMonth}
-                onChange={setReferenceYearMonth}
+                onChange={onPeriodChange}
                 showTodayButton={false}
               />
               <p className="mt-1 text-[10px] text-fg-subtle">
-                {t("import.statement_period_hint")}
+                {pdfFiles.length > 1
+                  ? t("import.starting_period_hint")
+                  : t("import.statement_period_hint")}
               </p>
             </div>
           </div>

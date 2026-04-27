@@ -262,25 +262,67 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Bulk-rename a set of transactions to share a single description and
-/// merchant_clean. Used by the "renamed an installment, want to fix the
-/// other parcelas / same-name purchases?" follow-up modal. Single SQL
+/// What to apply to every row in `ids`. Each `Some` field is patched;
+/// each `None` is left alone. Used by the BulkApplyDialog follow-up
+/// after a single edit to propagate description/merchant_clean and/or
+/// category_id to related rows (other parcelas, same-name purchases).
+pub struct BulkPatch<'a> {
+    pub description: Option<&'a str>,
+    pub merchant_clean: Option<Option<&'a str>>,
+    pub category_id: Option<Option<&'a str>>,
+}
+
+/// Bulk-apply a partial patch to a set of transactions. Single prepared
 /// statement reused across rows so we don't pay a round-trip per id.
-pub fn bulk_rename(
+/// The SQL is built dynamically based on which fields are set so we
+/// don't write `description = description` no-ops when only the category
+/// is changing.
+pub fn bulk_update(
     conn: &Connection,
     ids: &[String],
-    description: &str,
-    merchant_clean: Option<&str>,
+    patch: &BulkPatch<'_>,
 ) -> AppResult<usize> {
     if ids.is_empty() {
         return Ok(0);
     }
-    let mut stmt = conn.prepare(
-        "UPDATE transactions SET description = ?, merchant_clean = ? WHERE id = ?",
-    )?;
+    let mut sets: Vec<&'static str> = Vec::new();
+    if patch.description.is_some() {
+        sets.push("description = ?");
+    }
+    if patch.merchant_clean.is_some() {
+        sets.push("merchant_clean = ?");
+    }
+    if patch.category_id.is_some() {
+        sets.push("category_id = ?");
+    }
+    if sets.is_empty() {
+        return Ok(0);
+    }
+    let sql = format!(
+        "UPDATE transactions SET {} WHERE id = ?",
+        sets.join(", "),
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let mut count = 0usize;
     for id in ids {
-        count += stmt.execute(rusqlite::params![description, merchant_clean, id])?;
+        let mut binds: Vec<rusqlite::types::Value> = Vec::new();
+        if let Some(d) = patch.description {
+            binds.push(rusqlite::types::Value::Text(d.to_string()));
+        }
+        if let Some(m) = patch.merchant_clean {
+            binds.push(match m {
+                Some(s) => rusqlite::types::Value::Text(s.to_string()),
+                None => rusqlite::types::Value::Null,
+            });
+        }
+        if let Some(c) = patch.category_id {
+            binds.push(match c {
+                Some(s) => rusqlite::types::Value::Text(s.to_string()),
+                None => rusqlite::types::Value::Null,
+            });
+        }
+        binds.push(rusqlite::types::Value::Text(id.clone()));
+        count += stmt.execute(rusqlite::params_from_iter(binds))?;
     }
     Ok(count)
 }

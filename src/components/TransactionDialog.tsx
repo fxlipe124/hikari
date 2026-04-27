@@ -13,10 +13,14 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Field, FieldRow } from "@/components/ui/Field";
 import { Switch } from "@/components/ui/Switch";
-import { BulkRenameDialog, type RenameCandidate } from "@/components/BulkRenameDialog";
+import {
+  BulkApplyDialog,
+  type BulkCandidate,
+  type BulkChange,
+} from "@/components/BulkApplyDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
 import {
-  useBulkRenameTransactions,
+  useBulkUpdateTransactions,
   useCreateTransaction,
   useDeleteTransaction,
   useUpdateTransaction,
@@ -68,21 +72,23 @@ function nameKey(tx: Transaction | { merchantClean: string | null; description: 
 
 /**
  * Find transactions that share enough identity with the just-edited row
- * to deserve a rename-cascade prompt. Two reasons can make a row a
+ * to deserve a bulk-apply prompt. Two reasons can make a row a
  * candidate:
  *   - It belongs to the same installment_group_id (parcela of the same
- *     purchase plan; almost always the user wants the rename to apply).
+ *     purchase plan; almost always the user wants the change to apply).
  *   - It has the same name (merchantClean or description) as the row's
- *     *previous* state — useful when "AMAZON.COM*BR-9X7" should become
- *     "Amazon" everywhere it appears.
+ *     *previous* state — useful both for renames ("AMAZON.COM*BR-9X7"
+ *     → "Amazon" everywhere) and for category sweeps (assigning a
+ *     category to one row of a recurring merchant should offer to fix
+ *     the rest).
  * Excludes the edited row itself. The two reasons are deduped so a
  * parcela that also matches by name doesn't show up twice.
  */
-function findRenameCandidates(
+function findBulkCandidates(
   edited: Transaction,
   pool: Transaction[],
-): RenameCandidate[] {
-  const out: RenameCandidate[] = [];
+): BulkCandidate[] {
+  const out: BulkCandidate[] = [];
   const seen = new Set<string>([edited.id]);
   if (edited.installmentGroupId) {
     for (const tx of pool) {
@@ -161,7 +167,7 @@ export function TransactionDialog({
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const del = useDeleteTransaction();
-  const bulkRename = useBulkRenameTransactions();
+  const bulkUpdate = useBulkUpdateTransactions();
 
   const [form, setForm] = useState<FormState>(() =>
     editing ? fromTx(editing) : emptyForm(cards?.[0]?.id ?? null)
@@ -169,11 +175,11 @@ export function TransactionDialog({
   const [error, setError] = useState<string | null>(null);
 
   // Follow-up modal state. Set after a save where description/merchantClean
-  // changed AND there are related rows to offer renaming.
-  const [renameContext, setRenameContext] = useState<{
-    candidates: RenameCandidate[];
-    description: string;
-    merchantClean: string | null;
+  // and/or categoryId changed AND there are related rows to offer the same
+  // change to.
+  const [bulkContext, setBulkContext] = useState<{
+    candidates: BulkCandidate[];
+    change: BulkChange;
   } | null>(null);
 
   useEffect(() => {
@@ -300,27 +306,35 @@ export function TransactionDialog({
           );
         } else {
           await update.mutateAsync({ id: editing.id, patch: basePayload });
-          // After a successful save, look for related rows the user
-          // probably wants to rename in lockstep:
+          // After a successful save, look for related rows that probably
+          // want the same change applied:
           //  - other parcelas in the same installment_group_id
           //  - other purchases with the *previous* name (lets the user
-          //    rebrand "AMAZON.COM*BR-3DXJ" → "Amazon" everywhere)
-          // Open the follow-up modal instead of closing right away when
-          // any candidate exists.
+          //    rebrand "AMAZON.COM*BR-3DXJ" → "Amazon" everywhere, or
+          //    sweep a category onto every "Spotify" row at once)
+          // Trigger when description/merchantClean or categoryId changed.
           const renamed =
             basePayload.description !== editing.description ||
             basePayload.merchantClean !== editing.merchantClean;
-          const candidates = renamed
-            ? findRenameCandidates(editing, allTxs ?? [])
-            : [];
+          const recategorized = basePayload.categoryId !== editing.categoryId;
+          const change: BulkChange = {};
+          if (renamed) {
+            change.description = basePayload.description;
+            change.merchantClean = basePayload.merchantClean;
+          }
+          if (recategorized) {
+            change.categoryId = basePayload.categoryId;
+            const cat = categories?.find((c) => c.id === basePayload.categoryId);
+            change.categoryLabel = cat
+              ? t(`category.${cat.id}`, { defaultValue: cat.name })
+              : null;
+          }
+          const candidates =
+            renamed || recategorized ? findBulkCandidates(editing, allTxs ?? []) : [];
           if (candidates.length > 0) {
-            setRenameContext({
-              candidates,
-              description: basePayload.description,
-              merchantClean: basePayload.merchantClean,
-            });
+            setBulkContext({ candidates, change });
             toast.success(t("toast.transaction_updated"));
-            // Keep the editor dialog open beneath; BulkRenameDialog stacks
+            // Keep the editor dialog open beneath; BulkApplyDialog stacks
             // on top. Once the user picks an option there, we close both.
             return;
           }
@@ -415,24 +429,27 @@ export function TransactionDialog({
 
   const busy = create.isPending || update.isPending || del.isPending;
 
-  async function applyBulkRename(selectedIds: string[]) {
-    if (!renameContext) return;
+  async function applyBulkChange(selectedIds: string[]) {
+    if (!bulkContext) return;
     if (selectedIds.length === 0) {
-      setRenameContext(null);
+      setBulkContext(null);
       onOpenChange(false);
       return;
     }
     try {
-      const count = await bulkRename.mutateAsync({
+      const change = bulkContext.change;
+      // Strip the display-only categoryLabel before sending to the
+      // backend — it's not a column.
+      const { categoryLabel: _, ...patch } = change;
+      const count = await bulkUpdate.mutateAsync({
         ids: selectedIds,
-        description: renameContext.description,
-        merchantClean: renameContext.merchantClean,
+        patch,
       });
-      toast.success(t("toast.bulk_renamed", { count }));
+      toast.success(t("toast.bulk_updated", { count }));
     } catch (e) {
       toast.fromError(e, t("toast.transaction_save_failed"));
     } finally {
-      setRenameContext(null);
+      setBulkContext(null);
       onOpenChange(false);
     }
   }
@@ -615,20 +632,19 @@ export function TransactionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {renameContext && (
-      <BulkRenameDialog
-        open={renameContext !== null}
+    {bulkContext && (
+      <BulkApplyDialog
+        open={bulkContext !== null}
         onOpenChange={(o) => {
           if (!o) {
-            setRenameContext(null);
+            setBulkContext(null);
             onOpenChange(false);
           }
         }}
-        candidates={renameContext.candidates}
-        newDescription={renameContext.description}
-        newMerchantClean={renameContext.merchantClean}
-        onApply={applyBulkRename}
-        busy={bulkRename.isPending}
+        candidates={bulkContext.candidates}
+        change={bulkContext.change}
+        onApply={applyBulkChange}
+        busy={bulkUpdate.isPending}
       />
     )}
   </>);

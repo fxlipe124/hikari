@@ -126,9 +126,14 @@
     "detected_card_metadata_hint": "O cartão está cadastrado com fechamento {{cardClosing}} / vencimento {{cardDue}}. Atualizar?",
     "update_card": "Atualizar cartão"
   },
-  "bulk_rename": {
-    "title": "Aplicar renomeação a transações relacionadas?",
-    "subtitle": "Você renomeou esta compra para \"{{name}}\". Deseja aplicar o mesmo nome às transações abaixo?",
+  "bulk_apply": {
+    "title_rename": "Aplicar renomeação a transações relacionadas?",
+    "title_category": "Aplicar categoria a transações relacionadas?",
+    "title_combined": "Aplicar mudanças a transações relacionadas?",
+    "subtitle": "A aplicar: {{summary}}. Escolha quais linhas relacionadas devem acompanhar.",
+    "summary_rename": "renomear para \"{{name}}\"",
+    "summary_category": "categorizar como {{category}}",
+    "summary_no_category": "(sem categoria)",
     "section_installments": "Outras parcelas desta compra",
     "section_same_name": "Outras transações com o mesmo nome",
     "skip": "Pular",
@@ -233,6 +238,8 @@
     "statement_year_hint": "Usado quando a fatura só tem datas DD/MM sem ano explícito.",
     "statement_period": "Mês de fatura",
     "statement_period_hint": "Mês de fechamento desta fatura. O dia de fechamento do cartão decide a qual ano/mês cada linha DD/MM pertence.",
+    "starting_period": "Fatura inicial",
+    "starting_period_hint": "Mês de fechamento da fatura mais antiga deste lote — usado como fallback quando o header de um PDF não é reconhecido. O mês detectado pelo parser de cada PDF tem prioridade.",
     "issuer": {
       "sofisa": "Sofisa Direto",
       "mercado_pago": "Mercado Pago",
@@ -379,8 +386,8 @@
     "transaction_created": "Transação lançada",
     "transaction_duplicated": "Transação duplicada",
     "transaction_updated": "Transação atualizada",
-    "bulk_renamed_one": "{{count}} outra transação renomeada",
-    "bulk_renamed_other": "{{count}} outras transações renomeadas",
+    "bulk_updated_one": "{{count}} outra transação atualizada",
+    "bulk_updated_other": "{{count}} outras transações atualizadas",
     "installments_created_one": "{{count}} parcela criada",
     "installments_created_other": "{{count}} parcelas criadas",
     "transaction_deleted": "Transação apagada",

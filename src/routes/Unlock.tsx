@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useVaultStore } from "@/hooks/useVaultStore";
-import { ipc, isTauri, isIpcError } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, isIpcError } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import { pickVaultToCreate, pickVaultToOpen } from "@/lib/dialogs";
 import {
@@ -126,7 +126,7 @@ export function Unlock() {
         else if (e.code === "vault_not_found") setError(t("error.vault_not_found_dot"));
         else setError(e.message);
       } else {
-        setError(String(e));
+        setError(errorMessage(e));
       }
     } finally {
       setBusy(false);

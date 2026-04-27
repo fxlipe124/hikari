@@ -13,11 +13,11 @@ import {
   type FilterState,
 } from "@/components/FilterDialog";
 import { useCards, useCategories, useTransactions } from "@/lib/queries";
+import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import type { Transaction } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import {
   cn,
-  currentYearMonth,
   formatDate,
   monthLabel,
   parseMoney,
@@ -35,7 +35,6 @@ export function Transactions() {
   const location = useLocation();
   const navigate = useNavigate();
   const navState = location.state as NavState | null;
-  const initialYm = navState?.ym ?? currentYearMonth();
   const initialFilter: FilterState = navState?.categoryIds
     ? { ...emptyFilter, categoryIds: navState.categoryIds }
     : emptyFilter;
@@ -44,7 +43,20 @@ export function Transactions() {
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [creating, setCreating] = useState(false);
-  const [ym, setYm] = useState(initialYm);
+  // Month state shared with Dashboard via a zustand store — see the same
+  // hook in Dashboard.tsx for the rationale.
+  const ym = useViewMonthStore((s) => s.ym);
+  const setYm = useViewMonthStore((s) => s.setYm);
+  // If we got a forwarded `ym` from another route (e.g. Dashboard click on
+  // the donut chart, ImportPreview commit) prefer that, but only on first
+  // mount of this navigation — don't keep slamming the store on every
+  // re-render.
+  useEffect(() => {
+    if (navState?.ym && navState.ym !== ym) {
+      setYm(navState.ym);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filter, setFilter] = useState<FilterState>(initialFilter);
   const [filterOpen, setFilterOpen] = useState(false);
   const { data: cards } = useCards();

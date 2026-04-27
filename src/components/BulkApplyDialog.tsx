@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/Button";
 import type { Transaction } from "@/lib/ipc";
 import { cn, formatDate, useFormatMoney } from "@/lib/utils";
 
-export interface RenameCandidate {
+export type BulkApplyReason = "installment" | "same_name";
+
+export interface BulkCandidate {
   tx: Transaction;
   /**
    * Why this row showed up:
@@ -21,30 +23,43 @@ export interface RenameCandidate {
    *   - "same_name": same merchantClean (or description) as the editing
    *     row's *previous* name, on a different installment group
    */
-  reason: "installment" | "same_name";
+  reason: BulkApplyReason;
 }
 
 /**
- * Follow-up modal that opens after the user renames a single transaction
- * in TransactionDialog. Shows the rows that *could* receive the same
- * rename and lets the user pick which to apply it to. Defaults: all
- * checked — that's the common case ("rebrand the merchant everywhere"
- * or "the parcela got the right name, fix the rest of the group").
+ * What's about to be applied to each selected candidate. Mirrors the
+ * shape of the backend's BulkPatch — only fields the user actually
+ * changed should be set, so we don't trample unrelated columns.
  */
-export function BulkRenameDialog({
+export interface BulkChange {
+  description?: string;
+  /** explicit null clears the field; undefined leaves it alone */
+  merchantClean?: string | null;
+  /** explicit null clears the category; undefined leaves it alone */
+  categoryId?: string | null;
+  /** Display label for the new category (used in the dialog header). */
+  categoryLabel?: string | null;
+}
+
+/**
+ * Follow-up modal that opens after the user edits a single transaction
+ * and changes one or more fields that typically apply across related
+ * rows (description/merchant_clean for renames, category_id for
+ * bulk-categorization). Lists candidates with checkboxes — defaults all
+ * checked, since the common case is "apply everywhere".
+ */
+export function BulkApplyDialog({
   open,
   onOpenChange,
   candidates,
-  newDescription,
-  newMerchantClean,
+  change,
   onApply,
   busy,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  candidates: RenameCandidate[];
-  newDescription: string;
-  newMerchantClean: string | null;
+  candidates: BulkCandidate[];
+  change: BulkChange;
   onApply: (selectedIds: string[]) => Promise<void>;
   busy?: boolean;
 }) {
@@ -69,7 +84,7 @@ export function BulkRenameDialog({
     });
   }
 
-  function toggleGroup(reason: RenameCandidate["reason"]) {
+  function toggleGroup(reason: BulkApplyReason) {
     const groupIds = candidates.filter((c) => c.reason === reason).map((c) => c.tx.id);
     const allSelected = groupIds.every((id) => selected.has(id));
     setSelected((s) => {
@@ -84,18 +99,43 @@ export function BulkRenameDialog({
 
   const installmentRows = candidates.filter((c) => c.reason === "installment");
   const sameNameRows = candidates.filter((c) => c.reason === "same_name");
-  const displayName =
-    newMerchantClean && newMerchantClean.trim().length > 0
-      ? newMerchantClean
-      : newDescription;
+
+  // Build a one-line summary of what's about to be applied so the user
+  // can sanity-check before committing. Inlined so the i18next `t` is in
+  // scope without juggling its TFunction signature.
+  const summaryParts: string[] = [];
+  const newName =
+    change.merchantClean !== undefined &&
+    change.merchantClean !== null &&
+    change.merchantClean.trim().length > 0
+      ? change.merchantClean
+      : change.description;
+  if (newName) {
+    summaryParts.push(t("bulk_apply.summary_rename", { name: newName }));
+  }
+  if (change.categoryId !== undefined) {
+    summaryParts.push(
+      t("bulk_apply.summary_category", {
+        category: change.categoryLabel ?? t("bulk_apply.summary_no_category"),
+      }),
+    );
+  }
+  const summary = summaryParts.join(" · ");
+  const hasRename = change.description != null || change.merchantClean !== undefined;
+  const hasCategory = change.categoryId !== undefined;
+  const titleKey = hasRename && hasCategory
+    ? "bulk_apply.title_combined"
+    : hasCategory
+      ? "bulk_apply.title_category"
+      : "bulk_apply.title_rename";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>{t("bulk_rename.title")}</DialogTitle>
+          <DialogTitle>{t(titleKey)}</DialogTitle>
           <DialogDescription>
-            {t("bulk_rename.subtitle", { name: displayName })}
+            {t("bulk_apply.subtitle", { summary })}
           </DialogDescription>
         </DialogHeader>
 
@@ -103,7 +143,7 @@ export function BulkRenameDialog({
           {installmentRows.length > 0 && (
             <Section
               icon={<Layers className="h-3.5 w-3.5" />}
-              label={t("bulk_rename.section_installments")}
+              label={t("bulk_apply.section_installments")}
               count={installmentRows.length}
               allSelected={installmentRows.every((c) => selected.has(c.tx.id))}
               onToggleAll={() => toggleGroup("installment")}
@@ -122,7 +162,7 @@ export function BulkRenameDialog({
           {sameNameRows.length > 0 && (
             <Section
               icon={<Tag className="h-3.5 w-3.5" />}
-              label={t("bulk_rename.section_same_name")}
+              label={t("bulk_apply.section_same_name")}
               count={sameNameRows.length}
               allSelected={sameNameRows.every((c) => selected.has(c.tx.id))}
               onToggleAll={() => toggleGroup("same_name")}
@@ -147,7 +187,7 @@ export function BulkRenameDialog({
             onClick={() => onOpenChange(false)}
             disabled={busy}
           >
-            {t("bulk_rename.skip")}
+            {t("bulk_apply.skip")}
           </Button>
           <Button
             size="sm"
@@ -156,7 +196,7 @@ export function BulkRenameDialog({
           >
             {busy
               ? t("common.saving")
-              : t("bulk_rename.apply", { count: selected.size })}
+              : t("bulk_apply.apply", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

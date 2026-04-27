@@ -10,7 +10,7 @@ import { useCards, useCategories } from "@/lib/queries";
 import { useUpdateCard } from "@/lib/mutations";
 import { useImportStore } from "@/hooks/useImportStore";
 import { useCurrencyStore } from "@/hooks/useCurrencyStore";
-import { ipc, isTauri, type ImportRow } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type ImportRow } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import {
   cn,
@@ -118,21 +118,38 @@ export function ImportPreview() {
     setBusy(true);
     try {
       const currency = useCurrencyStore.getState().currency;
-      // Closing day priority per row: the row's source-file metadata
-      // (rowMetadata[i].closingDay, set by ImportDialog when batch-importing
-      // multiple PDFs) wins, then the import-wide cardMetadata, then the
-      // card's nominal default. Per-row resolution is what makes batch
-      // imports of Sofisa-style statements with shifting closing days
-      // group correctly month-by-month.
-      const fallbackClosingDay = cardMetadata?.closingDay ?? card?.closingDay ?? null;
+      // Statement period priority per row:
+      //   1. parser's own statement_year_month (extracted from the
+      //      Sofisa header — source of truth for "which fatura is
+      //      this row billed in"). Critical for parcela rows where
+      //      Sofisa prints the *original purchase date* on every
+      //      installment: parcela 2/10 dated 04/07 imported in the
+      //      Sep fatura would otherwise group with Aug because
+      //      `posted_at + closing_day` puts day-04 in the closing
+      //      month containing it.
+      //   2. closing_day pivot — fallback for non-Sofisa or paste
+      //      mode where the parser couldn't see a header.
+      //   3. nothing (backend then computes via card.closing_day on
+      //      insert).
+      const fallbackClosingDay =
+        cardMetadata?.closingDay ?? card?.closingDay ?? null;
+      const fallbackStmt = cardMetadata?.statementYearMonth ?? null;
       const payload: ImportRow[] = rows
         .map((r, i) => ({ r, i }))
         .filter(({ i }) => included[i])
         .map(({ r, i }) => {
           const postedAt =
             r.postedAt.length === 10 ? `${r.postedAt}T00:00:00Z` : r.postedAt;
-          const rowClosingDay =
-            rowMetadata[i]?.closingDay ?? fallbackClosingDay;
+          const rowMeta = rowMetadata[i] ?? null;
+          // Parser-detected period (per row in batch imports, otherwise
+          // the import-wide one). Wins outright when present.
+          const parsedStmt = rowMeta?.statementYearMonth ?? fallbackStmt;
+          const rowClosingDay = rowMeta?.closingDay ?? fallbackClosingDay;
+          const statementYearMonth =
+            parsedStmt ??
+            (rowClosingDay !== null
+              ? statementPeriod(postedAt, rowClosingDay)
+              : undefined);
           return {
             postedAt,
             description: r.description,
@@ -146,10 +163,7 @@ export function ImportPreview() {
             installmentTotal: r.installment ? r.installment[1] : null,
             isRefund: r.isRefund,
             isVirtualCard: r.isVirtualCard,
-            statementYearMonth:
-              rowClosingDay !== null
-                ? statementPeriod(postedAt, rowClosingDay)
-                : undefined,
+            statementYearMonth,
           };
         });
 
@@ -186,7 +200,7 @@ export function ImportPreview() {
         },
       });
     } catch (e) {
-      setError(String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
