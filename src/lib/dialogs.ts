@@ -35,6 +35,24 @@ export async function pickPdfToImport(): Promise<string | null> {
   return null;
 }
 
+/**
+ * Multi-PDF picker — returns the absolute paths of every PDF the user
+ * selected. Used by ImportDialog's batch-import mode where each PDF is
+ * parsed independently (its own Sofisa header → its own closing day),
+ * then all rows are merged into a single ImportPreview.
+ */
+export async function pickPdfsToImport(): Promise<string[]> {
+  if (!isTauri) return [];
+  const path = await open({
+    multiple: true,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+    title: i18n.t("dialog.file.select_pdfs"),
+  });
+  if (Array.isArray(path)) return path;
+  if (typeof path === "string") return [path];
+  return [];
+}
+
 export async function pickCsvToSave(suggestedName = "transactions.csv"): Promise<string | null> {
   if (!isTauri) return null;
   const path = await save({

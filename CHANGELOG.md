@@ -5,6 +5,32 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-04-27
+
+First incremental release on top of the sealed `v0.1.0`.
+
+### Added
+
+- **Multi-PDF batch import**: drop several statements onto the import
+  dialog or pick them all at once from the native picker. Each PDF is
+  parsed with its own header (closing day, due day) so statements with
+  different cuts land on the right month automatically — no more
+  re-importing one fatura at a time when catching up on a year of
+  history.
+- **Rename cascade**: renaming a transaction now offers to apply the
+  same name to its other parcelas and to other purchases that share
+  the previous name. Each candidate row gets a checkbox so you can
+  partially apply.
+
+### Fixed
+
+- **Date display off-by-one**: a transaction stored as
+  `2024-08-15T00:00:00Z` showed up as "14 ago" in the list because the
+  formatter passed the ISO string through `new Date()`, which converts
+  the UTC midnight to 21:00 of the previous day in any timezone west
+  of UTC. The formatter now reads the calendar date directly from the
+  string instead of round-tripping through a tz-aware Date.
+
 ## [0.1.0] — 2026-04-25
 
 First public release. Local-first credit-card statement vault, fully
@@ -73,4 +99,5 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.1]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.0

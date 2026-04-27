@@ -24,7 +24,7 @@ export function ImportPreview() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { rows, cardId, issuer, cardMetadata, updateRow, clear } = useImportStore();
+  const { rows, cardId, issuer, cardMetadata, rowMetadata, updateRow, clear } = useImportStore();
   const { data: cards } = useCards();
   const { data: categories } = useCategories();
   const updateCard = useUpdateCard();
@@ -118,18 +118,21 @@ export function ImportPreview() {
     setBusy(true);
     try {
       const currency = useCurrencyStore.getState().currency;
-      // Closing day priority: parsed Sofisa header (most accurate, reflects
-      // the *actual* closing of *this* statement) > card's nominal default.
-      // If neither is available we omit statementYearMonth and let the
-      // backend fall back via card.closing_day.
-      const closingDay =
-        cardMetadata?.closingDay ?? card?.closingDay ?? null;
+      // Closing day priority per row: the row's source-file metadata
+      // (rowMetadata[i].closingDay, set by ImportDialog when batch-importing
+      // multiple PDFs) wins, then the import-wide cardMetadata, then the
+      // card's nominal default. Per-row resolution is what makes batch
+      // imports of Sofisa-style statements with shifting closing days
+      // group correctly month-by-month.
+      const fallbackClosingDay = cardMetadata?.closingDay ?? card?.closingDay ?? null;
       const payload: ImportRow[] = rows
         .map((r, i) => ({ r, i }))
         .filter(({ i }) => included[i])
-        .map(({ r }) => {
+        .map(({ r, i }) => {
           const postedAt =
             r.postedAt.length === 10 ? `${r.postedAt}T00:00:00Z` : r.postedAt;
+          const rowClosingDay =
+            rowMetadata[i]?.closingDay ?? fallbackClosingDay;
           return {
             postedAt,
             description: r.description,
@@ -144,7 +147,9 @@ export function ImportPreview() {
             isRefund: r.isRefund,
             isVirtualCard: r.isVirtualCard,
             statementYearMonth:
-              closingDay !== null ? statementPeriod(postedAt, closingDay) : undefined,
+              rowClosingDay !== null
+                ? statementPeriod(postedAt, rowClosingDay)
+                : undefined,
           };
         });
 

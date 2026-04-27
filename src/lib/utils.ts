@@ -81,13 +81,28 @@ export const formatBRL = formatMoney;
 export const parseBRL = parseMoney;
 
 export function formatDate(iso: string, style: "short" | "long" | "day" = "short"): string {
-  const d = new Date(iso);
-  const day = String(d.getDate()).padStart(2, "0");
+  // posted_at is stored as `YYYY-MM-DDTHH:MM:SSZ`. Going through `new Date(iso)`
+  // parses the trailing `Z` as UTC and then `.getDate()` returns the *local*
+  // calendar day — in UTC-3 a row stamped 2024-08-15T00:00:00Z renders as
+  // "14 ago" because midnight UTC is 21:00 of the previous day locally.
+  // Treat the prefix as a calendar date instead: parse YYYY-MM-DD directly,
+  // and only build a Date for the month-name lookup using local-time
+  // constructor so the formatter sees the day we actually want.
+  const datePart = iso.slice(0, 10);
+  const [yStr, mStr, dStr] = datePart.split("-");
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10);
+  const dy = parseInt(dStr, 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(dy)) {
+    return iso;
+  }
+  const localDate = new Date(y, m - 1, dy);
+  const day = String(dy).padStart(2, "0");
   const month = new Intl.DateTimeFormat(i18n.language, {
     month: style === "long" ? "long" : "short",
-  }).format(d);
+  }).format(localDate);
   if (style === "day") return `${day} ${month}`;
-  return `${day} ${month} ${d.getFullYear()}`;
+  return `${day} ${month} ${y}`;
 }
 
 export function monthLabel(yearMonth: string): string {

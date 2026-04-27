@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { ClipboardPaste, FileUp, Sparkles } from "lucide-react";
+import { ClipboardPaste, FileUp, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -15,12 +15,24 @@ import { Input } from "@/components/ui/Input";
 import { MonthPicker } from "@/components/ui/MonthPicker";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/Tabs";
 import { useCards } from "@/lib/queries";
-import { ipc, isTauri, isIpcError } from "@/lib/ipc";
-import { pickPdfToImport } from "@/lib/dialogs";
+import {
+  ipc,
+  isTauri,
+  isIpcError,
+  type CardMetadata,
+  type ParsedTransaction,
+} from "@/lib/ipc";
+import { pickPdfsToImport } from "@/lib/dialogs";
 import { useImportStore } from "@/hooks/useImportStore";
 import { cn, currentYearMonth, statementPeriod } from "@/lib/utils";
 
 type Mode = "paste" | "pdf";
+
+interface PdfFile {
+  name: string;
+  path: string | null;
+  size?: number;
+}
 
 export function ImportDialog({
   open,
@@ -32,8 +44,7 @@ export function ImportDialog({
   const { t } = useTranslation();
   const [mode, setMode] = useState<Mode>("paste");
   const [pasted, setPasted] = useState("");
-  const [pdfFile, setPdfFile] = useState<{ name: string; size?: number } | null>(null);
-  const [pdfPath, setPdfPath] = useState<string | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
   const [pdfPassword, setPdfPassword] = useState("");
   const [needsPassword, setNeedsPassword] = useState(false);
   const [cardId, setCardId] = useState<string | null>(null);
@@ -41,9 +52,12 @@ export function ImportDialog({
   // statements only print "DD/MM" per row, so the parser needs both the
   // closing-month *and* the card's closing_day to figure out which calendar
   // year/month each row actually belongs to (handles Dec→Jan rollover).
+  // For multi-file imports, each file's own Sofisa header overrides this
+  // (the user-set picker only applies to single-file paste/PDF).
   const [referenceYearMonth, setReferenceYearMonth] = useState<string>(() => currentYearMonth());
   const [isDragging, setIsDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -52,12 +66,15 @@ export function ImportDialog({
 
   const onFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const f = files[0];
-    if (!f.name.toLowerCase().endsWith(".pdf")) return;
-    // In Tauri, the dropped File object exposes a synthetic path attribute.
-    const path = (f as unknown as { path?: string }).path ?? null;
-    setPdfFile({ name: f.name, size: f.size });
-    setPdfPath(path);
+    const incoming: PdfFile[] = [];
+    for (const f of Array.from(files)) {
+      if (!f.name.toLowerCase().endsWith(".pdf")) continue;
+      // In Tauri, the dropped File object exposes a synthetic path attribute.
+      const path = (f as unknown as { path?: string }).path ?? null;
+      incoming.push({ name: f.name, path, size: f.size });
+    }
+    if (incoming.length === 0) return;
+    setPdfFiles((prev) => [...prev, ...incoming]);
     setNeedsPassword(false);
     setError(null);
   }, []);
@@ -70,29 +87,36 @@ export function ImportDialog({
 
   // Click-to-pick: in Tauri, the HTML <input type="file"> picker doesn't
   // expose the absolute path that the Rust side needs to read the PDF.
-  // Route through the native dialog to get a real filesystem path.
+  // Route through the native dialog (multi-select enabled) to get real
+  // filesystem paths.
   const onPickClick = async () => {
     if (!isTauri) {
       fileRef.current?.click();
       return;
     }
-    const path = await pickPdfToImport();
-    if (!path) return;
-    const name = path.split(/[\\/]/).pop() ?? "statement.pdf";
-    setPdfFile({ name });
-    setPdfPath(path);
+    const paths = await pickPdfsToImport();
+    if (paths.length === 0) return;
+    const incoming: PdfFile[] = paths.map((p) => ({
+      name: p.split(/[\\/]/).pop() ?? "statement.pdf",
+      path: p,
+    }));
+    setPdfFiles((prev) => [...prev, ...incoming]);
     setNeedsPassword(false);
     setError(null);
   };
 
+  const removeFile = (index: number) => {
+    setPdfFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const reset = () => {
     setPasted("");
-    setPdfFile(null);
-    setPdfPath(null);
+    setPdfFiles([]);
     setPdfPassword("");
     setNeedsPassword(false);
     setCardId(null);
     setReferenceYearMonth(currentYearMonth());
+    setProgress(null);
     setError(null);
     setMode("paste");
   };
@@ -111,64 +135,121 @@ export function ImportDialog({
   };
 
   const canSubmit =
-    !!cardId && (mode === "paste" ? pasted.trim().length > 20 : !!pdfFile);
+    !!cardId && (mode === "paste" ? pasted.trim().length > 20 : pdfFiles.length > 0);
 
   async function onContinue() {
     if (!cardId) return;
     setError(null);
     setBusy(true);
+    setProgress(null);
     try {
-      let text: string;
-      if (mode === "paste") {
-        text = pasted;
-      } else {
-        if (!isTauri) {
-          setError(t("error.pdf_drop_requires_tauri"));
-          setBusy(false);
-          return;
-        }
-        if (!pdfPath) {
-          setError(t("error.file_path_read_failed"));
-          setBusy(false);
-          return;
-        }
-        try {
-          text = await ipc.import.extractPdf(
-            pdfPath,
-            needsPassword ? pdfPassword : undefined
-          );
-        } catch (e) {
-          if (isIpcError(e) && e.code === "invalid_password") {
-            setNeedsPassword(true);
-            setError(needsPassword ? t("error.wrong_password") : t("error.pdf_protected"));
-            setBusy(false);
-            return;
-          }
-          throw e;
-        }
-      }
-
       if (!isTauri) {
         setError(t("error.tauri_backend_required"));
         setBusy(false);
         return;
       }
-      const preview = await ipc.import.parse(
-        text,
-        undefined,
-        referenceYearMonth,
-        cardId,
-      );
-      if (preview.transactions.length === 0) {
+
+      // Both paths produce the same shape: a list of (issuer, rows,
+      // cardMetadata) tuples. Single paste = 1 entry; PDF mode loops.
+      type ParsedFile = {
+        issuer: import("@/lib/ipc").Issuer;
+        transactions: ParsedTransaction[];
+        cardMetadata: CardMetadata | null;
+      };
+      const parsed: ParsedFile[] = [];
+
+      if (mode === "paste") {
+        const preview = await ipc.import.parse(
+          pasted,
+          undefined,
+          referenceYearMonth,
+          cardId,
+        );
+        parsed.push({
+          issuer: preview.issuer,
+          transactions: preview.transactions,
+          cardMetadata: preview.cardMetadata ?? null,
+        });
+      } else {
+        for (let i = 0; i < pdfFiles.length; i += 1) {
+          const f = pdfFiles[i];
+          setProgress({ current: i + 1, total: pdfFiles.length });
+          if (!f.path) {
+            setError(t("error.file_path_read_failed"));
+            setBusy(false);
+            setProgress(null);
+            return;
+          }
+          let text: string;
+          try {
+            text = await ipc.import.extractPdf(
+              f.path,
+              needsPassword ? pdfPassword : undefined,
+            );
+          } catch (e) {
+            if (isIpcError(e) && e.code === "invalid_password") {
+              setNeedsPassword(true);
+              setError(
+                needsPassword ? t("error.wrong_password") : t("error.pdf_protected"),
+              );
+              setBusy(false);
+              setProgress(null);
+              return;
+            }
+            throw e;
+          }
+          // Each file uses its own auto-detected reference period via the
+          // Sofisa header parser; the user-set referenceYearMonth is only
+          // a fallback when the header is missing or unrecognized.
+          const preview = await ipc.import.parse(
+            text,
+            undefined,
+            referenceYearMonth,
+            cardId,
+          );
+          parsed.push({
+            issuer: preview.issuer,
+            transactions: preview.transactions,
+            cardMetadata: preview.cardMetadata ?? null,
+          });
+        }
+      }
+
+      // Merge results. Each row inherits its source file's cardMetadata
+      // (closing_day / statement_year_month) so ImportPreview can compute
+      // the right per-row statement period at commit time.
+      const allRows: ParsedTransaction[] = [];
+      const fileMetas: Array<CardMetadata | null> = [];
+      let primaryIssuer: import("@/lib/ipc").Issuer = parsed[0]?.issuer ?? "generic";
+      for (const p of parsed) {
+        for (const r of p.transactions) {
+          allRows.push(r);
+          fileMetas.push(p.cardMetadata);
+        }
+      }
+      if (allRows.length === 0) {
         setError(t("error.no_transactions_recognized"));
         setBusy(false);
+        setProgress(null);
         return;
       }
+      // For the banner: surface metadata only when every file agrees (the
+      // typical case is "all files belong to the same card" → metadata
+      // matches). When files disagree, suppress the banner — auto-update
+      // would clobber the per-file values that ImportPreview computes
+      // per-row anyway.
+      const firstMeta = parsed[0]?.cardMetadata ?? null;
+      const metasAgree = parsed.every(
+        (p) =>
+          (p.cardMetadata?.closingDay ?? null) === (firstMeta?.closingDay ?? null) &&
+          (p.cardMetadata?.dueDay ?? null) === (firstMeta?.dueDay ?? null),
+      );
       setPayload(
         cardId,
-        preview.issuer,
-        preview.transactions,
-        preview.cardMetadata ?? null,
+        primaryIssuer,
+        allRows,
+        metasAgree ? firstMeta : null,
+        fileMetas,
       );
       onOpenChange(false);
       reset();
@@ -177,6 +258,7 @@ export function ImportDialog({
       setError(String(e));
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -287,10 +369,10 @@ export function ImportDialog({
                 onDrop={onDrop}
                 onClick={onPickClick}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed cursor-pointer transition-colors min-h-[160px]",
+                  "flex flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed cursor-pointer transition-colors min-h-[160px] p-3",
                   isDragging
                     ? "border-accent bg-accent/5"
-                    : pdfFile
+                    : pdfFiles.length > 0
                     ? "border-accent/40 bg-accent/5"
                     : "border-border bg-bg hover:border-border-strong"
                 )}
@@ -299,34 +381,54 @@ export function ImportDialog({
                   ref={fileRef}
                   type="file"
                   accept="application/pdf"
+                  multiple
                   className="hidden"
                   onChange={(e) => onFiles(e.target.files)}
                 />
-                {pdfFile ? (
-                  <>
-                    <FileUp className="h-6 w-6 text-accent" />
-                    <div className="text-sm font-medium">{pdfFile.name}</div>
-                    {pdfFile.size != null && (
-                      <div className="text-xs text-fg-subtle tabular">
-                        {(pdfFile.size / 1024).toFixed(1)} KB
+                {pdfFiles.length > 0 ? (
+                  <div className="w-full" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 text-xs text-fg-muted">
+                        <FileUp className="h-3.5 w-3.5 text-accent" />
+                        <span>{t("import.pdf_files_selected", { count: pdfFiles.length })}</span>
                       </div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPdfFile(null);
-                        setPdfPath(null);
-                        setNeedsPassword(false);
-                      }}
-                      className="mt-1 text-xs text-fg-muted hover:text-fg"
-                    >
-                      {t("common.change_file")}
-                    </button>
-                  </>
+                      <button
+                        type="button"
+                        onClick={onPickClick}
+                        className="text-xs text-fg-muted hover:text-fg"
+                      >
+                        {t("import.add_more")}
+                      </button>
+                    </div>
+                    <ul className="space-y-1 max-h-[180px] overflow-auto">
+                      {pdfFiles.map((f, i) => (
+                        <li
+                          key={`${f.name}-${i}`}
+                          className="flex items-center gap-2 rounded-[var(--radius)] bg-surface border border-border px-2 py-1 text-xs"
+                        >
+                          <FileUp className="h-3 w-3 text-fg-subtle shrink-0" />
+                          <span className="flex-1 truncate">{f.name}</span>
+                          {f.size != null && (
+                            <span className="text-fg-subtle tabular shrink-0">
+                              {(f.size / 1024).toFixed(0)} KB
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeFile(i)}
+                            className="text-fg-subtle hover:text-danger"
+                            aria-label={t("common.remove")}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : (
                   <>
                     <FileUp className="h-6 w-6 text-fg-subtle" />
-                    <div className="text-sm">{t("import.pdf_instruction")}</div>
+                    <div className="text-sm">{t("import.pdf_instruction_multi")}</div>
                     <div className="text-xs text-fg-subtle">
                       {t("import.pdf_password_hint")}
                     </div>
@@ -346,6 +448,11 @@ export function ImportDialog({
                     autoFocus
                   />
                 </div>
+              )}
+              {pdfFiles.length > 1 && (
+                <p className="mt-2 text-[10px] text-fg-subtle">
+                  {t("import.multi_file_hint")}
+                </p>
               )}
             </TabsContent>
           </Tabs>
@@ -368,7 +475,14 @@ export function ImportDialog({
             {t("common.cancel")}
           </Button>
           <Button size="sm" disabled={!canSubmit || busy} onClick={onContinue}>
-            {busy ? t("common.processing") : t("common.continue")}
+            {busy
+              ? progress
+                ? t("import.parsing_progress", {
+                    current: progress.current,
+                    total: progress.total,
+                  })
+                : t("common.processing")
+              : t("common.continue")}
           </Button>
         </DialogFooter>
       </DialogContent>
