@@ -224,6 +224,7 @@ export const ipc = {
   transactions: {
     list: (filter?: {
       yearMonth?: string;
+      year?: string;
       cardId?: string;
       categoryId?: string;
       query?: string;
@@ -253,10 +254,22 @@ export const ipc = {
       }),
     bulkRemove: (ids: string[]) =>
       invoke<number>("transactions_bulk_remove", { ids }),
+    /** Restore exact statement_year_month per id; used by closing-day cascade undo. */
+    bulkSetStatementPeriods: (
+      patches: Array<{ id: string; statementYearMonth: string | null }>,
+    ) =>
+      invoke<number>("transactions_bulk_set_statement_periods", { patches }),
     monthSummary: (yearMonth: string, cardId?: string) =>
       invoke<{ totalCents: number; byCategory: Array<{ categoryId: string | null; totalCents: number }>; byCard: Array<{ cardId: string; totalCents: number }> }>(
         "transactions_month_summary",
         { yearMonth, cardId: cardId ?? null }
       ),
+    yearSummary: (year: string, cardId?: string) =>
+      invoke<{
+        totalCents: number;
+        byMonth: Array<{ yearMonth: string; totalCents: number }>;
+        byCategory: Array<{ categoryId: string | null; totalCents: number }>;
+        byCard: Array<{ cardId: string; totalCents: number }>;
+      }>("transactions_year_summary", { year, cardId: cardId ?? null }),
   },
 };

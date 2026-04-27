@@ -2,30 +2,34 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
-import { Cell, Pie, PieChart, Tooltip } from "recharts";
+import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { MonthPicker } from "@/components/ui/MonthPicker";
+import { PeriodPicker } from "@/components/ui/PeriodPicker";
 import { CardDialog } from "@/components/CardDialog";
-import { useCards, useCategories, useMonthSummary, useTransactions } from "@/lib/queries";
+import {
+  useCards,
+  useCategories,
+  useMonthSummary,
+  useTransactions,
+  useYearSummary,
+} from "@/lib/queries";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import { cn, formatDate, monthLabel, useFormatMoney } from "@/lib/utils";
 
-function MonthHeader({
-  ym,
-  onChange,
+function PeriodHeader({
   subtitle,
+  children,
 }: {
-  ym: string;
-  onChange: (ym: string) => void;
   subtitle?: string;
+  children: React.ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <div className="border-b border-border px-6 py-5">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-tight capitalize">{t("route.dashboard.title")}</h1>
-        <MonthPicker value={ym} onChange={onChange} />
+        {children}
       </div>
       {subtitle && <p className="mt-0.5 text-sm text-fg-muted">{subtitle}</p>}
     </div>
@@ -65,16 +69,20 @@ function Stat({
 export function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  // Month state lives in a tiny zustand store shared with the Transactions
+  // Period state lives in a tiny zustand store shared with the Transactions
   // route, so navigating between the two — or popping a sub-dialog and
   // coming back — doesn't snap us back to "today". Cleared on app
   // restart / vault relock, where "today" is the right default.
+  const mode = useViewMonthStore((s) => s.mode);
+  const setMode = useViewMonthStore((s) => s.setMode);
   const ym = useViewMonthStore((s) => s.ym);
   const setYm = useViewMonthStore((s) => s.setYm);
-  // When a card is selected, the month picker becomes a "statement period"
-  // picker (closing-day-aware) — that's the user's mental model. With "all
-  // cards", we fall back to calendar month since multi-card statements have
-  // no shared period.
+  const year = useViewMonthStore((s) => s.year);
+  const setYear = useViewMonthStore((s) => s.setYear);
+  // When a card is selected, the period picker is statement-period-aware
+  // (closing-day-aware) — that's the user's mental model. With "all cards",
+  // we fall back to calendar month/year since multi-card statements have no
+  // shared period.
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const { data: cards } = useCards();
   // Auto-default to the only card when the vault has exactly one card. With
@@ -88,11 +96,15 @@ export function Dashboard() {
       setCardFilter(cards[0].id);
     }
   }, [cards, cardFilter]);
-  const { data: summary } = useMonthSummary(ym, cardFilter ?? undefined);
-  const { data: txs } = useTransactions({
-    yearMonth: ym,
-    cardId: cardFilter ?? undefined,
-  });
+  const yearStr = String(year);
+  const { data: monthSummary } = useMonthSummary(ym, cardFilter ?? undefined);
+  const { data: yearSummary } = useYearSummary(yearStr, cardFilter ?? undefined);
+  const summary = mode === "month" ? monthSummary : yearSummary;
+  const { data: txs } = useTransactions(
+    mode === "month"
+      ? { yearMonth: ym, cardId: cardFilter ?? undefined }
+      : { year: yearStr, cardId: cardFilter ?? undefined },
+  );
   const { data: categories } = useCategories();
   const [createCardOpen, setCreateCardOpen] = useState(false);
   const formatMoney = useFormatMoney();
@@ -118,6 +130,18 @@ export function Dashboard() {
       };
     });
   }, [summary, categories, t]);
+
+  // Month-by-month bar data for the year view. Empty array in month mode —
+  // the bar chart isn't rendered there.
+  const monthsBar = useMemo(() => {
+    if (mode !== "year" || !yearSummary) return [];
+    return yearSummary.byMonth.map((b) => {
+      const monthIdx = parseInt(b.yearMonth.slice(5, 7), 10) - 1;
+      const date = new Date(year, monthIdx, 1);
+      const label = new Intl.DateTimeFormat("en", { month: "short" }).format(date);
+      return { ym: b.yearMonth, label, total: b.totalCents };
+    });
+  }, [mode, yearSummary, year]);
 
   const recent = useMemo(() => (txs ?? []).slice(0, 8), [txs]);
 
@@ -153,15 +177,22 @@ export function Dashboard() {
     return sorted[0];
   }, [cards]);
 
+  const periodPicker = (
+    <PeriodPicker
+      mode={mode}
+      ym={ym}
+      year={year}
+      onModeChange={setMode}
+      onYmChange={setYm}
+      onYearChange={setYear}
+    />
+  );
+
   const isEmpty = (cards?.length ?? 0) === 0 && (txs?.length ?? 0) === 0;
   if (isEmpty) {
     return (
       <div className="pb-10">
-        <MonthHeader
-          ym={ym}
-          onChange={setYm}
-          subtitle={t("route.dashboard.subtitle")}
-        />
+        <PeriodHeader subtitle={t("route.dashboard.subtitle")}>{periodPicker}</PeriodHeader>
         <div className="px-6 py-12">
           <div className="mx-auto max-w-md">
             <Card>
@@ -195,11 +226,7 @@ export function Dashboard() {
 
   return (
     <div className="pb-10">
-      <MonthHeader
-        ym={ym}
-        onChange={setYm}
-        subtitle={headerSubtitle}
-      />
+      <PeriodHeader subtitle={headerSubtitle}>{periodPicker}</PeriodHeader>
 
       <div className="px-6 pt-4 flex items-center gap-1 flex-wrap">
         <button
@@ -233,7 +260,7 @@ export function Dashboard() {
       <div className="space-y-6 px-6 py-6">
         <div className="flex gap-3">
           <Stat
-            label={t("stats.month_total")}
+            label={mode === "year" ? t("stats.year_total") : t("stats.month_total")}
             value={formatMoney(summary?.totalCents ?? 0)}
             hint={t("stats.transactions_count", { count: txs?.length ?? 0 })}
           />
@@ -255,11 +282,75 @@ export function Dashboard() {
           />
         </div>
 
+        {mode === "year" && monthsBar.length > 0 && (
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>{t("dashboard.year_by_month")}</CardTitle>
+              <span className="text-xs text-fg-subtle tabular">{year}</span>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <BarChart width={760} height={180} data={monthsBar}>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={48}
+                  tickFormatter={(v) => {
+                    const n = Number(v);
+                    if (!Number.isFinite(n)) return "";
+                    if (Math.abs(n) >= 100000) return `${Math.round(n / 100000) / 10}k`;
+                    return String(n / 100);
+                  }}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--surface-hover)" }}
+                  formatter={(value) => {
+                    const n = Number(value);
+                    return Number.isFinite(n) ? formatMoney(n) : "";
+                  }}
+                  contentStyle={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    fontSize: "12px",
+                    padding: "6px 10px",
+                  }}
+                  labelStyle={{ color: "var(--fg)" }}
+                />
+                <Bar
+                  dataKey="total"
+                  fill="var(--accent)"
+                  radius={[3, 3, 0, 0]}
+                  onClick={(d: unknown) => {
+                    const ymHit = (d as { ym?: string } | undefined)?.ym;
+                    if (ymHit) {
+                      // Drill into the picked month — flips the store back
+                      // to month mode so the user sees the standard view
+                      // for that fatura.
+                      setMode("month");
+                      setYm(ymHit);
+                    }
+                  }}
+                  className="cursor-pointer"
+                />
+              </BarChart>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-5 gap-6">
           <Card className="col-span-3">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>{t("dashboard.top_categories")}</CardTitle>
-              <span className="text-xs text-fg-subtle capitalize">{monthLabel(ym)}</span>
+              <span className="text-xs text-fg-subtle capitalize">
+                {mode === "year" ? year : monthLabel(ym)}
+              </span>
             </CardHeader>
             <CardContent>
               {topCategories.length === 0 ? (
@@ -282,13 +373,16 @@ export function Dashboard() {
                       onClick={(slice: unknown) => {
                         const id = (slice as { id?: string } | undefined)?.id;
                         if (id && id !== "_") {
-                          // Carry the dashboard's selected month so the
+                          // Carry the dashboard's selected period so the
                           // Transactions page opens scoped to the same
-                          // statement — without ym, it falls back to
+                          // window — without it, it falls back to
                           // currentYearMonth() and the click looks broken
-                          // when browsing past months.
+                          // when browsing past months / years.
                           navigate("/transactions", {
-                            state: { ym, categoryIds: [id] },
+                            state:
+                              mode === "year"
+                                ? { year: yearStr, categoryIds: [id] }
+                                : { ym, categoryIds: [id] },
                           });
                         }
                       }}

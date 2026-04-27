@@ -100,6 +100,10 @@ pub struct TransactionInput {
 #[serde(rename_all = "camelCase")]
 pub struct TransactionFilter {
     pub year_month: Option<String>,
+    /// "YYYY" — fetch every row whose statement period (or posted_at, when
+    /// no card is selected) sits in this calendar year. Mutually exclusive
+    /// with `year_month`; if both are set, `year_month` wins.
+    pub year: Option<String>,
     pub card_id: Option<String>,
     pub category_id: Option<String>,
     pub query: Option<String>,
@@ -138,6 +142,26 @@ pub struct CardSummary {
 #[serde(rename_all = "camelCase")]
 pub struct MonthSummary {
     pub total_cents: i64,
+    pub by_category: Vec<CategorySummary>,
+    pub by_card: Vec<CardSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthBucket {
+    /// "YYYY-MM" — same shape as the monthly views use elsewhere.
+    pub year_month: String,
+    pub total_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YearSummary {
+    pub total_cents: i64,
+    /// 12 entries — one per month, January→December. Months with no
+    /// activity still show up with `total_cents = 0` so the bar chart on
+    /// the Dashboard has a stable axis instead of jumping over gaps.
+    pub by_month: Vec<MonthBucket>,
     pub by_category: Vec<CategorySummary>,
     pub by_card: Vec<CardSummary>,
 }

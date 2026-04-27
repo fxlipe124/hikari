@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 use crate::models::{
-    CardSummary, CategorySummary, MonthSummary, Transaction, TransactionFilter, TransactionInput,
+    CardSummary, CategorySummary, MonthBucket, MonthSummary, Transaction, TransactionFilter,
+    TransactionInput, YearSummary,
 };
 
 fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Transaction> {
@@ -48,6 +49,18 @@ pub fn list(conn: &Connection, filter: &TransactionFilter) -> AppResult<Vec<Tran
         } else {
             sql.push_str(" AND substr(posted_at, 1, 7) = ?");
             values.push(rusqlite::types::Value::Text(ym.clone()));
+        }
+    } else if let Some(year) = &filter.year {
+        // Yearly view: prefix-match on the same column the month case uses,
+        // so single-card view stays statement-period-aware (a row dated
+        // 17/12/2024 with closing day 16 lands in 2025-01 — the yearly view
+        // must honor that and put it in 2025, not 2024).
+        if filter.card_id.is_some() {
+            sql.push_str(" AND substr(statement_year_month, 1, 4) = ?");
+            values.push(rusqlite::types::Value::Text(year.clone()));
+        } else {
+            sql.push_str(" AND substr(posted_at, 1, 4) = ?");
+            values.push(rusqlite::types::Value::Text(year.clone()));
         }
     }
     if let Some(card) = &filter.card_id {
@@ -324,6 +337,39 @@ pub fn remove_by_import(conn: &Connection, import_id: &str) -> AppResult<usize> 
     Ok(count)
 }
 
+/// Restore exact statement_year_month values per id in one prepared-statement
+/// loop. Used by the closing-day cascade undo: capture the before-state on
+/// the frontend, run the cascade (which re-derives every row from
+/// posted_at + closing_day), then on undo replay the captured periods to
+/// preserve any value the import path had hand-stamped from the parsed
+/// Sofisa header. Without this, undo would re-derive too and silently
+/// re-clobber Sofisa-stamped rows. `None` writes SQL NULL.
+pub struct StatementPeriodPatch<'a> {
+    pub id: &'a str,
+    pub statement_year_month: Option<&'a str>,
+}
+
+pub fn bulk_set_statement_periods(
+    conn: &Connection,
+    patches: &[StatementPeriodPatch<'_>],
+) -> AppResult<usize> {
+    if patches.is_empty() {
+        return Ok(0);
+    }
+    let mut stmt = conn.prepare(
+        "UPDATE transactions SET statement_year_month = ? WHERE id = ?",
+    )?;
+    let mut count = 0usize;
+    for p in patches {
+        let ym_value: rusqlite::types::Value = match p.statement_year_month {
+            Some(s) => rusqlite::types::Value::Text(s.to_string()),
+            None => rusqlite::types::Value::Null,
+        };
+        count += stmt.execute(rusqlite::params![ym_value, p.id])?;
+    }
+    Ok(count)
+}
+
 /// Delete a batch of transactions in one prepared-statement loop. Used
 /// by the multi-select toolbar in the Transactions page so the user
 /// can clear a stack of imported test rows in one click.
@@ -492,6 +538,141 @@ pub fn month_summary(
     })
 }
 
+/// Yearly aggregate: total + per-month bucket + per-category + per-card.
+/// Single-card view groups by the persisted statement_year_month so the
+/// month buckets honor the closing-day pivot (a 17/12 row with closing
+/// day 16 lands in 2025-01). Multi-card view falls back to calendar
+/// `posted_at` since there's no shared statement period across cards.
+pub fn year_summary(
+    conn: &Connection,
+    year: &str,
+    card_id: Option<&str>,
+) -> AppResult<YearSummary> {
+    let (year_filter, period_expr, mut binds): (&str, &str, Vec<rusqlite::types::Value>) =
+        if card_id.is_some() {
+            (
+                "substr(statement_year_month, 1, 4) = ?",
+                "statement_year_month",
+                vec![rusqlite::types::Value::Text(year.to_string())],
+            )
+        } else {
+            (
+                "substr(posted_at, 1, 4) = ?",
+                "substr(posted_at, 1, 7)",
+                vec![rusqlite::types::Value::Text(year.to_string())],
+            )
+        };
+
+    let card_filter = if card_id.is_some() {
+        binds.push(rusqlite::types::Value::Text(card_id.unwrap().to_string()));
+        " AND card_id = ?"
+    } else {
+        ""
+    };
+
+    let total_sql = format!(
+        "SELECT COALESCE(SUM(CASE WHEN is_refund=1 THEN -amount_cents ELSE amount_cents END), 0)
+         FROM transactions WHERE {}{}",
+        year_filter, card_filter,
+    );
+    let total_cents: i64 = conn
+        .query_row(
+            &total_sql,
+            rusqlite::params_from_iter(binds.iter()),
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    // Per-month bucket. Pull what's actually in the DB; we'll fill missing
+    // months with zeros below so the bar chart axis stays stable.
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    {
+        let sql = format!(
+            "SELECT {} AS ym, SUM(CASE WHEN is_refund=1 THEN -amount_cents ELSE amount_cents END)
+             FROM transactions WHERE {}{}
+             GROUP BY ym",
+            period_expr, year_filter, card_filter,
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+            Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        for r in rows {
+            let (ym, sum) = r?;
+            if let Some(ym) = ym {
+                counts.insert(ym, sum);
+            }
+        }
+    }
+    let mut by_month: Vec<MonthBucket> = (1..=12u32)
+        .map(|m| {
+            let key = format!("{}-{:02}", year, m);
+            let total = counts.remove(&key).unwrap_or(0);
+            MonthBucket {
+                year_month: key,
+                total_cents: total,
+            }
+        })
+        .collect();
+    // Carry over any straggler months that don't fit the YYYY-MM mold —
+    // shouldn't happen with normal data but worth surfacing rather than
+    // silently dropping.
+    for (year_month, total_cents) in counts {
+        by_month.push(MonthBucket {
+            year_month,
+            total_cents,
+        });
+    }
+
+    let mut by_category: Vec<CategorySummary> = Vec::new();
+    {
+        let sql = format!(
+            "SELECT category_id, SUM(CASE WHEN is_refund=1 THEN -amount_cents ELSE amount_cents END) AS total
+             FROM transactions WHERE {}{}
+             GROUP BY category_id ORDER BY total DESC",
+            year_filter, card_filter,
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+            Ok(CategorySummary {
+                category_id: r.get(0)?,
+                total_cents: r.get(1)?,
+            })
+        })?;
+        for r in rows {
+            by_category.push(r?);
+        }
+    }
+    by_category.sort_by(|a, b| b.total_cents.cmp(&a.total_cents));
+
+    let mut by_card: Vec<CardSummary> = Vec::new();
+    {
+        let sql = format!(
+            "SELECT card_id, SUM(CASE WHEN is_refund=1 THEN -amount_cents ELSE amount_cents END) AS total
+             FROM transactions WHERE {}{}
+             GROUP BY card_id ORDER BY total DESC",
+            year_filter, card_filter,
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+            Ok(CardSummary {
+                card_id: r.get(0)?,
+                total_cents: r.get(1)?,
+            })
+        })?;
+        for r in rows {
+            by_card.push(r?);
+        }
+    }
+
+    Ok(YearSummary {
+        total_cents,
+        by_month,
+        by_category,
+        by_card,
+    })
+}
+
 /// Maps an ISO date + the card's closing day to the "YYYY-MM" of the
 /// statement that purchase belongs to. The statement that closes on day
 /// `closing_day` of month M contains purchases dated (M-1, closing_day+1)
@@ -589,6 +770,96 @@ mod tests {
         assert_eq!(fetched.description, "Coffee shop");
         assert_eq!(fetched.amount_cents, 1500);
         assert_eq!(fetched.notes.as_deref(), Some("Tasty"));
+    }
+
+    #[test]
+    fn bulk_set_statement_periods_writes_each_id() {
+        let conn = setup_test_db();
+        let a = create(&conn, &make_input()).unwrap();
+        let mut input_b = make_input();
+        input_b.description = "Other".into();
+        input_b.statement_year_month = Some("2024-09".into());
+        let b = create(&conn, &input_b).unwrap();
+
+        let patches = vec![
+            StatementPeriodPatch {
+                id: &a.id,
+                statement_year_month: Some("2024-12"),
+            },
+            StatementPeriodPatch {
+                id: &b.id,
+                statement_year_month: None,
+            },
+        ];
+        let count = bulk_set_statement_periods(&conn, &patches).unwrap();
+        assert_eq!(count, 2);
+
+        assert_eq!(get(&conn, &a.id).unwrap().statement_year_month.as_deref(), Some("2024-12"));
+        assert_eq!(get(&conn, &b.id).unwrap().statement_year_month, None);
+    }
+
+    #[test]
+    fn year_filter_lists_every_month_of_the_year() {
+        let conn = setup_test_db();
+        // Three rows: two in 2024, one in 2025.
+        let mut a = make_input();
+        a.posted_at = "2024-03-15T00:00:00Z".into();
+        a.statement_year_month = Some("2024-03".into());
+        a.description = "Mar 2024".into();
+        let mut b = make_input();
+        b.posted_at = "2024-11-02T00:00:00Z".into();
+        b.statement_year_month = Some("2024-11".into());
+        b.description = "Nov 2024".into();
+        let mut c = make_input();
+        c.posted_at = "2025-01-10T00:00:00Z".into();
+        c.statement_year_month = Some("2025-01".into());
+        c.description = "Jan 2025".into();
+        create(&conn, &a).unwrap();
+        create(&conn, &b).unwrap();
+        create(&conn, &c).unwrap();
+
+        let mut filter = TransactionFilter::default();
+        filter.year = Some("2024".into());
+        filter.card_id = Some("card-test".into());
+        let rows = list(&conn, &filter).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.description == "Mar 2024"));
+        assert!(rows.iter().any(|r| r.description == "Nov 2024"));
+    }
+
+    #[test]
+    fn year_summary_buckets_by_month_and_pads_zeros() {
+        let conn = setup_test_db();
+        let mut a = make_input();
+        a.posted_at = "2024-03-15T00:00:00Z".into();
+        a.statement_year_month = Some("2024-03".into());
+        a.amount_cents = 1000;
+        let mut b = make_input();
+        b.posted_at = "2024-03-20T00:00:00Z".into();
+        b.statement_year_month = Some("2024-03".into());
+        b.description = "Other March".into();
+        b.amount_cents = 500;
+        let mut c = make_input();
+        c.posted_at = "2024-11-02T00:00:00Z".into();
+        c.statement_year_month = Some("2024-11".into());
+        c.description = "Nov".into();
+        c.amount_cents = 2500;
+        create(&conn, &a).unwrap();
+        create(&conn, &b).unwrap();
+        create(&conn, &c).unwrap();
+
+        let summary = year_summary(&conn, "2024", Some("card-test")).unwrap();
+        assert_eq!(summary.total_cents, 1000 + 500 + 2500);
+        // 12 months always returned, in order.
+        assert_eq!(summary.by_month.len(), 12);
+        assert_eq!(summary.by_month[2].year_month, "2024-03");
+        assert_eq!(summary.by_month[2].total_cents, 1500);
+        assert_eq!(summary.by_month[10].year_month, "2024-11");
+        assert_eq!(summary.by_month[10].total_cents, 2500);
+        // April through October all zero (no activity).
+        for i in 3..10 {
+            assert_eq!(summary.by_month[i].total_cents, 0);
+        }
     }
 
     #[test]

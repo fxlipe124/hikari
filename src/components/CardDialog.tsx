@@ -15,6 +15,7 @@ import { Field, FieldRow } from "@/components/ui/Field";
 import {
   useCreateCard,
   useUndoableDeleteCard,
+  useUndoableUpdateCardWithCascade,
   useUpdateCard,
 } from "@/lib/mutations";
 import { ipc } from "@/lib/ipc";
@@ -87,6 +88,7 @@ export function CardDialog({
   const { t } = useTranslation();
   const create = useCreateCard();
   const update = useUpdateCard();
+  const updateWithCascade = useUndoableUpdateCardWithCascade();
   const del = useUndoableDeleteCard();
   // Init with empty state and let the effect below populate from `editing` when
   // the dialog opens. Avoids the brief first-render flash where the lazy
@@ -150,15 +152,23 @@ export function CardDialog({
 
     try {
       if (editing) {
-        await update.mutateAsync({
-          id: editing.id,
-          patch: closingChanged ? { ...payload, recomputeStatements: true } : payload,
-        });
-        toast.success(
-          closingChanged
-            ? t("toast.card_updated_recomputed")
-            : t("toast.card_updated"),
-        );
+        if (closingChanged) {
+          // Capture the affected tx list *before* the cascade fires so the
+          // undo wrapper can replay each row's exact prior
+          // statement_year_month — the cascade unconditionally re-derives
+          // SY_M from posted_at + closing_day, which would clobber any
+          // value the import path had hand-stamped from a Sofisa header.
+          const allTxs = await ipc.transactions.list();
+          const cardTransactions = allTxs.filter((tx) => tx.cardId === editing.id);
+          await updateWithCascade.mutateAsync({
+            original: editing,
+            cardTransactions,
+            patch: { ...payload, recomputeStatements: true },
+          });
+        } else {
+          await update.mutateAsync({ id: editing.id, patch: payload });
+          toast.success(t("toast.card_updated"));
+        }
       } else {
         await create.mutateAsync(payload);
         toast.success(t("toast.card_created"));
@@ -187,7 +197,11 @@ export function CardDialog({
     }
   }
 
-  const busy = create.isPending || update.isPending || del.isPending;
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    updateWithCascade.isPending ||
+    del.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

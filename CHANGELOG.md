@@ -5,6 +5,40 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.8] — 2026-04-27
+
+### Added
+
+- **Yearly view.** A new "M / Y" toggle next to the period picker on
+  Dashboard and Transactions. In year mode:
+  - Dashboard shows year-total, a 12-bar bar chart of monthly spending,
+    and the top categories aggregated for the whole year. Click a bar
+    to drill into that month (flips the toggle back to month mode).
+  - Transactions lists every row in the year (still sorted, filtered,
+    and bulk-actionable like the monthly view).
+  - Single-card view honors the closing-day pivot — a row dated 17/12
+    with closing day 16 lands in the next year's January for that
+    card's totals.
+  - Backend: new `transactions_year_summary` IPC + `year` filter on
+    `transactions_list`, both with the same statement-period awareness
+    as the monthly endpoints.
+- **Card closing-day cascade undo.** Editing a card's closing day
+  cascades through every transaction's `statement_year_month`. The new
+  flow snapshots each affected row's exact period before the cascade
+  fires (catching values the import path had hand-stamped from a
+  Sofisa header), runs the update, and pushes a HistoryOp whose undo
+  replays the captured pre-state via a new
+  `transactions_bulk_set_statement_periods` IPC. Redo replays the
+  post-state snapshot. Toast Undo and Ctrl+Z both work.
+
+### Changed
+
+- **Toast "Desfazer" uses a singleton id.** Previously each undo toast
+  carried the op's id, so two could coexist within the 7-second window
+  — clicking the older one would silently undo the *newer* op (whatever
+  was on top of the stack). Now each new call replaces the prior toast
+  in place, keeping the surface honest.
+
 ## [0.1.7] — 2026-04-27
 
 ### Added
@@ -270,6 +304,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.8]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.8
 [0.1.7]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.7
 [0.1.6]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.6
 [0.1.5]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.5

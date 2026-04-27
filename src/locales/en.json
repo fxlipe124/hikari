@@ -59,7 +59,14 @@
     "current_month": "Current month",
     "pick_month": "Pick a month",
     "prev_year": "Previous year",
-    "next_year": "Next year"
+    "next_year": "Next year",
+    "current_year": "This year"
+  },
+  "period": {
+    "mode_month": "Browse a single statement period",
+    "mode_year": "Browse the full calendar year",
+    "mode_month_short": "M",
+    "mode_year_short": "Y"
   },
   "vault": {
     "status_unlocked": "unlocked"
@@ -121,7 +128,8 @@
     "current_statement": "current statement",
     "recent_transactions": "Recent transactions",
     "add_card_prompt": "Add a card",
-    "limit_usage": "{{pct}}% of {{limit}}"
+    "limit_usage": "{{pct}}% of {{limit}}",
+    "year_by_month": "Spending by month"
   },
   "import_preview": {
     "reference_year": "Year",
@@ -149,6 +157,7 @@
   },
   "stats": {
     "month_total": "Month total",
+    "year_total": "Year total",
     "transactions_count_one": "{{count}} transaction",
     "transactions_count_other": "{{count}} transactions",
     "active_installments": "Active installments",
@@ -161,6 +170,7 @@
   "transactions": {
     "no_match": "No transactions match these filters",
     "nothing_entered": "Nothing entered in {{month}}",
+    "nothing_entered_year": "Nothing entered in {{year}}",
     "clear_filters": "Clear filters to see everything.",
     "manual_or_import": "Enter one manually or import a statement.",
     "installment_format": "installment {{index}}/{{total}}",
@@ -430,6 +440,7 @@
     "tx_updated": "transaction edited",
     "imported_n": "import",
     "card_deleted": "card deleted",
+    "card_updated_cascade": "card update + statement reshuffle",
     "category_deleted": "category deleted"
   },
   "error": {

@@ -21,17 +21,24 @@ export const toast = {
    * Success toast with a "Desfazer" action button. Action runs the most
    * recent op on the global history stack — same machinery as Ctrl+Z, so the
    * two surfaces stay consistent. Caller is expected to push the op to the
-   * history store *before* invoking this. The toast id matches the op id so
-   * a follow-up push for a new op can dismiss this one.
+   * history store *before* invoking this.
+   *
+   * Uses a fixed singleton id so each new call replaces the prior undo
+   * toast in place: clicking a stale toast for op A after op B has already
+   * fired would actually undo B (the top of the stack), not A — replacing
+   * the toast keeps the surface honest. The opId param is kept on the
+   * signature for future use (e.g. allowing the toast to target the
+   * specific op out-of-order) but currently goes unused.
    */
   successWithUndo: (
     message: string,
-    opId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _opId: string,
     description?: string,
     durationMs = 7000,
   ) =>
     sonner.success(message, {
-      id: opId,
+      id: "undo-toast",
       description,
       duration: durationMs,
       action: {

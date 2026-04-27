@@ -59,7 +59,14 @@
     "current_month": "Mês atual",
     "pick_month": "Escolher mês",
     "prev_year": "Ano anterior",
-    "next_year": "Próximo ano"
+    "next_year": "Próximo ano",
+    "current_year": "Ano atual"
+  },
+  "period": {
+    "mode_month": "Ver uma fatura",
+    "mode_year": "Ver o ano inteiro",
+    "mode_month_short": "M",
+    "mode_year_short": "A"
   },
   "vault": {
     "status_unlocked": "desbloqueado"
@@ -121,7 +128,8 @@
     "current_statement": "fatura atual",
     "recent_transactions": "Transações recentes",
     "add_card_prompt": "Cadastre um cartão",
-    "limit_usage": "{{pct}}% de {{limit}}"
+    "limit_usage": "{{pct}}% de {{limit}}",
+    "year_by_month": "Gastos por mês"
   },
   "import_preview": {
     "reference_year": "Ano",
@@ -149,6 +157,7 @@
   },
   "stats": {
     "month_total": "Total do mês",
+    "year_total": "Total do ano",
     "transactions_count_one": "{{count}} transação",
     "transactions_count_other": "{{count}} transações",
     "active_installments": "Parcelas ativas",
@@ -161,6 +170,7 @@
   "transactions": {
     "no_match": "Nenhuma transação bate com esses filtros",
     "nothing_entered": "Nada lançado em {{month}}",
+    "nothing_entered_year": "Nada lançado em {{year}}",
     "clear_filters": "Limpe os filtros para ver tudo.",
     "manual_or_import": "Lance uma manualmente ou importe uma fatura.",
     "installment_format": "parcela {{index}}/{{total}}",
@@ -430,6 +440,7 @@
     "tx_updated": "transação editada",
     "imported_n": "importação",
     "card_deleted": "cartão apagado",
+    "card_updated_cascade": "edição do cartão + recálculo de fatura",
     "category_deleted": "categoria apagada"
   },
   "error": {

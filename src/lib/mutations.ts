@@ -364,6 +364,85 @@ export function useUndoableDeleteCategory() {
 }
 
 /**
+ * Card update with the closing-day cascade. Captures the *exact*
+ * statement_year_month each affected row had before the cascade so undo
+ * can replay them verbatim — re-running cards_update with the old
+ * closing_day and recomputeStatements:true would re-derive every row
+ * from posted_at + closing_day, silently clobbering rows the import
+ * path had hand-stamped from the parsed Sofisa header. Capture +
+ * bulk-set is the only safe path.
+ *
+ * Caller passes the original Card and the full transactions list of
+ * that card (taken before the mutation), plus the new patch. The
+ * wrapper runs the mutation, then re-reads the new statement periods
+ * for the same id set, so redo can replay either direction.
+ */
+export function useUndoableUpdateCardWithCascade() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      original: Card;
+      cardTransactions: Transaction[];
+      patch: Partial<Card> & { recomputeStatements?: boolean };
+    }): Promise<Card> => {
+      if (!isTauri) throw notInTauri();
+      const { original, cardTransactions, patch } = args;
+      // Snapshot before-state per row so undo can restore the original
+      // periods regardless of where they came from (cascade-derived vs
+      // header-stamped).
+      const beforePeriods = cardTransactions.map((tx) => ({
+        id: tx.id,
+        statementYearMonth: tx.statementYearMonth ?? null,
+      }));
+      const result = await ipc.cards.update(original.id, patch);
+      invalidateAllAfterCardOrCategoryChange(qc);
+      // Snapshot after-state too — redo replays this exact set of periods.
+      // Re-fetch the rows because the cascade rewrote SY_M in-place; the
+      // ones we captured pre-mutation are now stale on the server.
+      const refreshed = await ipc.transactions.list();
+      const afterPeriods = refreshed
+        .filter((tx) => tx.cardId === original.id)
+        .map((tx) => ({ id: tx.id, statementYearMonth: tx.statementYearMonth ?? null }));
+      const op: HistoryOp = {
+        id: crypto.randomUUID(),
+        label: "history.card_updated_cascade",
+        undo: async () => {
+          // Restore card fields without re-firing the cascade so we don't
+          // wipe out the periods we're about to set explicitly.
+          const inverse: Partial<Card> & { recomputeStatements?: boolean } = {
+            name: original.name,
+            brand: original.brand,
+            last4: original.last4,
+            closingDay: original.closingDay,
+            dueDay: original.dueDay,
+            color: original.color,
+            creditLimitCents: original.creditLimitCents,
+          };
+          await ipc.cards.update(original.id, inverse);
+          if (beforePeriods.length > 0) {
+            await ipc.transactions.bulkSetStatementPeriods(beforePeriods);
+          }
+          invalidateAllAfterCardOrCategoryChange(qc);
+        },
+        redo: async () => {
+          await ipc.cards.update(original.id, patch);
+          // The cascade already re-derived everything; if the captured
+          // afterPeriods diverge from the cascade result (Sofisa-stamped
+          // rows would), bulk-set them back to the originally-recorded
+          // post-state.
+          if (afterPeriods.length > 0) {
+            await ipc.transactions.bulkSetStatementPeriods(afterPeriods);
+          }
+          invalidateAllAfterCardOrCategoryChange(qc);
+        },
+      };
+      pushAndToast(op, i18n.t("toast.card_updated_recomputed"));
+      return result;
+    },
+  });
+}
+
+/**
  * Import commit + push a HistoryOp wired to the new import_id. Undo nukes
  * every row tagged with that id; redo replays the same payload. Each
  * import gets its own undo entry so a session of N imports is N Ctrl+Z

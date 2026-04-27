@@ -7,7 +7,7 @@ use tauri::State;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     Card, CardInput, Category, CategoryInput, MonthSummary, RecentVault, Transaction,
-    TransactionFilter, TransactionInput, VaultStatus,
+    TransactionFilter, TransactionInput, VaultStatus, YearSummary,
 };
 use crate::pdf;
 use crate::repo;
@@ -151,6 +151,30 @@ pub fn transactions_remove_by_import(
     with_conn(&state, |c| repo::transactions::remove_by_import(c, &import_id))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementPeriodPatchInput {
+    pub id: String,
+    pub statement_year_month: Option<String>,
+}
+
+#[tauri::command]
+pub fn transactions_bulk_set_statement_periods(
+    state: State<AppState>,
+    patches: Vec<StatementPeriodPatchInput>,
+) -> AppResult<usize> {
+    with_conn(&state, |c| {
+        let refs: Vec<repo::transactions::StatementPeriodPatch> = patches
+            .iter()
+            .map(|p| repo::transactions::StatementPeriodPatch {
+                id: &p.id,
+                statement_year_month: p.statement_year_month.as_deref(),
+            })
+            .collect();
+        repo::transactions::bulk_set_statement_periods(c, &refs)
+    })
+}
+
 #[tauri::command]
 pub fn cards_restore(state: State<AppState>, card: Card) -> AppResult<Card> {
     with_conn(&state, |c| repo::cards::restore(c, &card))
@@ -222,6 +246,17 @@ pub fn transactions_month_summary(
 ) -> AppResult<MonthSummary> {
     with_conn(&state, |c| {
         repo::transactions::month_summary(c, &year_month, card_id.as_deref())
+    })
+}
+
+#[tauri::command]
+pub fn transactions_year_summary(
+    state: State<AppState>,
+    year: String,
+    card_id: Option<String>,
+) -> AppResult<YearSummary> {
+    with_conn(&state, |c| {
+        repo::transactions::year_summary(c, &year, card_id.as_deref())
     })
 }
 

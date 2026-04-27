@@ -5,7 +5,7 @@ import { FileText, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-rea
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
-import { MonthPicker } from "@/components/ui/MonthPicker";
+import { PeriodPicker } from "@/components/ui/PeriodPicker";
 import { TransactionDialog } from "@/components/TransactionDialog";
 import {
   countActiveFilters,
@@ -31,6 +31,8 @@ import {
 
 interface NavState {
   ym?: string;
+  /** When set, forces the page into year mode and uses this YYYY. */
+  year?: string;
   toast?: string;
   categoryIds?: string[];
 }
@@ -48,16 +50,25 @@ export function Transactions() {
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [creating, setCreating] = useState(false);
-  // Month state shared with Dashboard via a zustand store — see the same
+  // Period state shared with Dashboard via a zustand store — see the same
   // hook in Dashboard.tsx for the rationale.
+  const mode = useViewMonthStore((s) => s.mode);
+  const setMode = useViewMonthStore((s) => s.setMode);
   const ym = useViewMonthStore((s) => s.ym);
   const setYm = useViewMonthStore((s) => s.setYm);
-  // If we got a forwarded `ym` from another route (e.g. Dashboard click on
-  // the donut chart, ImportPreview commit) prefer that, but only on first
-  // mount of this navigation — don't keep slamming the store on every
-  // re-render.
+  const year = useViewMonthStore((s) => s.year);
+  const setYear = useViewMonthStore((s) => s.setYear);
+  // If we got a forwarded `ym` or `year` from another route (e.g. Dashboard
+  // click on the donut/bar chart, ImportPreview commit) prefer that, but
+  // only on first mount of this navigation — don't keep slamming the store
+  // on every re-render.
   useEffect(() => {
-    if (navState?.ym && navState.ym !== ym) {
+    if (navState?.year) {
+      setMode("year");
+      const n = parseInt(navState.year, 10);
+      if (Number.isFinite(n)) setYear(n);
+    } else if (navState?.ym && navState.ym !== ym) {
+      setMode("month");
       setYm(navState.ym);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,7 +85,12 @@ export function Transactions() {
       setCardFilter(cards[0].id);
     }
   }, [cards, cardFilter]);
-  const { data: txs } = useTransactions({ yearMonth: ym, query, cardId: cardFilter ?? undefined });
+  const yearStr = String(year);
+  const { data: txs } = useTransactions(
+    mode === "month"
+      ? { yearMonth: ym, query, cardId: cardFilter ?? undefined }
+      : { year: yearStr, query, cardId: cardFilter ?? undefined },
+  );
   const { data: categories } = useCategories();
   const formatMoney = useFormatMoney();
   const bulkUpdate = useUndoableBulkUpdateTransactions();
@@ -186,7 +202,14 @@ export function Transactions() {
       <div className="border-b border-border px-6 py-5">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-semibold tracking-tight capitalize">{t("route.transactions.title")}</h1>
-          <MonthPicker value={ym} onChange={setYm} />
+          <PeriodPicker
+            mode={mode}
+            ym={ym}
+            year={year}
+            onModeChange={setMode}
+            onYmChange={setYm}
+            onYearChange={setYear}
+          />
         </div>
         <p className="mt-0.5 text-sm text-fg-muted">
           {t("route.transactions.summary", {
@@ -349,7 +372,11 @@ export function Transactions() {
                     <p className="text-sm font-medium">
                       {query || cardFilter || activeFilterCount > 0
                         ? t("transactions.no_match")
-                        : t("transactions.nothing_entered", { month: monthLabel(ym).toLowerCase() })}
+                        : mode === "year"
+                          ? t("transactions.nothing_entered_year", { year })
+                          : t("transactions.nothing_entered", {
+                              month: monthLabel(ym).toLowerCase(),
+                            })}
                     </p>
                     <p className="text-xs text-fg-subtle mt-0.5">
                       {query || cardFilter || activeFilterCount > 0
