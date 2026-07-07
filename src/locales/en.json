@@ -163,10 +163,20 @@
     "transactions_count_other": "{{count}} transactions",
     "active_installments": "Active installments",
     "installments_hint": "Purchases paid in installments this month",
-    "active_cards": "Active cards",
-    "active_cards_hint": "With recent activity",
     "next_due": "Next due date",
-    "due_day_format": "day {{day}}"
+    "due_day_format": "day {{day}}",
+    "daily_avg": "Daily average",
+    "daily_avg_hint": "spending pace this period",
+    "monthly_avg": "Monthly average",
+    "monthly_avg_hint": "across the months so far",
+    "projection": "Projected total",
+    "projection_hint_one": "{{count}} day left in the period",
+    "projection_hint_other": "{{count}} days left in the period",
+    "vs_same_point": "vs. the same point last month",
+    "vs_prev_month": "vs. last month",
+    "vs_prev_year": "vs. last year",
+    "vs_same_point_year": "vs. the same point last year",
+    "trend_12m": "Last 12 months"
   },
   "transactions": {
     "no_match": "No transactions match these filters",

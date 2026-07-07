@@ -163,10 +163,20 @@
     "transactions_count_other": "{{count}} transações",
     "active_installments": "Parcelas ativas",
     "installments_hint": "Compras parceladas no mês",
-    "active_cards": "Cartões ativos",
-    "active_cards_hint": "Com movimento recente",
     "next_due": "Próximo vencimento",
-    "due_day_format": "dia {{day}}"
+    "due_day_format": "dia {{day}}",
+    "daily_avg": "Média diária",
+    "daily_avg_hint": "ritmo de gasto neste período",
+    "monthly_avg": "Média mensal",
+    "monthly_avg_hint": "nos meses decorridos",
+    "projection": "Projeção do período",
+    "projection_hint_one": "falta {{count}} dia no período",
+    "projection_hint_other": "faltam {{count}} dias no período",
+    "vs_same_point": "vs. o mesmo ponto do mês anterior",
+    "vs_prev_month": "vs. mês anterior",
+    "vs_prev_year": "vs. ano anterior",
+    "vs_same_point_year": "vs. o mesmo ponto do ano anterior",
+    "trend_12m": "Últimos 12 meses"
   },
   "transactions": {
     "no_match": "Nenhuma transação bate com esses filtros",

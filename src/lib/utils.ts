@@ -117,6 +117,43 @@ export function currentYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Shift a "YYYY-MM" label by whole months (negative = into the past). */
+export function shiftYearMonth(ym: string, deltaMonths: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + deltaMonths, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Calendar bounds (inclusive) of a viewed period. With a closing day, the
+ * period is the statement window whose label is `ym` under the same rule as
+ * {@link statementPeriod}: day <= closingDay belongs to that month's
+ * statement, later days roll into the next one. So statement "2024-08" with
+ * closing day 16 spans 2024-07-17 → 2024-08-16. Without a closing day
+ * (all-cards view) the period is the plain calendar month.
+ *
+ * Clamping mirrors statementPeriod's arithmetic at the month edges: a
+ * closing day past the end of the previous month leaves it no leftover days
+ * (start = day 1), and past the end of the current month caps at its last
+ * day (every day of the month is <= closingDay, so all of it belongs here).
+ */
+export function periodBounds(
+  ym: string,
+  closingDay: number | null,
+): { start: Date; end: Date } {
+  const [y, m] = ym.split("-").map(Number);
+  if (closingDay == null) {
+    return { start: new Date(y, m - 1, 1), end: new Date(y, m, 0) };
+  }
+  const daysInPrev = new Date(y, m - 1, 0).getDate();
+  const daysInCur = new Date(y, m, 0).getDate();
+  const start =
+    closingDay >= daysInPrev
+      ? new Date(y, m - 1, 1)
+      : new Date(y, m - 2, closingDay + 1);
+  return { start, end: new Date(y, m - 1, Math.min(closingDay, daysInCur)) };
+}
+
 /**
  * Maps a transaction date + the card's closing day to the "YYYY-MM" of the
  * statement that purchase belongs to. Mirrors the Rust helper in

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ipc, isTauri } from "./ipc";
 import { MOCK_CARDS, MOCK_CATEGORIES, MOCK_TRANSACTIONS } from "./mock";
@@ -126,6 +127,27 @@ export function useYearSummary(year: string, cardId?: string) {
       return { totalCents, byMonth, byCategory, byCard };
     },
   });
+}
+
+/**
+ * The 12 month-buckets ending at `endYm`, composed from two year summaries
+ * (the year of `endYm` and the one before) so no dedicated IPC is needed.
+ * Both underlying queries are cached under their own keys, so browsing
+ * between months of the same year costs nothing extra.
+ */
+export function useTrailingMonths(endYm: string, cardId?: string) {
+  const year = endYm.slice(0, 4);
+  const prevYear = String(parseInt(year, 10) - 1);
+  const cur = useYearSummary(year, cardId);
+  const prev = useYearSummary(prevYear, cardId);
+  const months = useMemo(() => {
+    if (!cur.data || !prev.data) return undefined;
+    const all = [...prev.data.byMonth, ...cur.data.byMonth];
+    const endIdx = all.findIndex((b) => b.yearMonth === endYm);
+    if (endIdx === -1) return undefined;
+    return all.slice(Math.max(0, endIdx - 11), endIdx + 1);
+  }, [cur.data, prev.data, endYm]);
+  return { months, isLoading: cur.isLoading || prev.isLoading };
 }
 
 export function useMonthSummary(yearMonth: string, cardId?: string) {

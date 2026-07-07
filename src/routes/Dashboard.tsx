@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { PeriodPicker } from "@/components/ui/PeriodPicker";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { DeltaBadge } from "@/components/ui/DeltaBadge";
+import { Sparkline } from "@/components/ui/Sparkline";
 import { PageHeader } from "@/components/PageHeader";
 import { CardFilterChips } from "@/components/CardFilterChips";
 import { CardDialog } from "@/components/CardDialog";
@@ -15,37 +17,53 @@ import {
   useCards,
   useCategories,
   useMonthSummary,
+  useTrailingMonths,
   useTransactions,
   useYearSummary,
 } from "@/lib/queries";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
-import { cn, formatDate, monthLabel, useFormatMoney } from "@/lib/utils";
+import {
+  cn,
+  formatDate,
+  monthLabel,
+  periodBounds,
+  shiftYearMonth,
+  useFormatMoney,
+} from "@/lib/utils";
 
 function Stat({
   label,
   value,
   hint,
+  badge,
+  footer,
   tone = "default",
 }: {
   label: string;
   value: string;
   hint?: string;
+  badge?: React.ReactNode;
+  footer?: React.ReactNode;
   tone?: "default" | "accent" | "warning";
 }) {
   return (
     <Card className="flex-1">
-      <CardContent className="space-y-1 py-5">
+      <CardContent className="space-y-1 py-4">
         <div className="text-xs text-fg-muted">{label}</div>
-        <div
-          className={cn(
-            "text-2xl font-semibold tabular tracking-tight",
-            tone === "accent" && "text-accent",
-            tone === "warning" && "text-warning"
-          )}
-        >
-          {value}
+        <div className="flex items-baseline gap-2">
+          <div
+            className={cn(
+              "text-2xl font-semibold tabular tracking-tight",
+              tone === "accent" && "text-accent",
+              tone === "warning" && "text-warning"
+            )}
+          >
+            {value}
+          </div>
+          {badge}
         </div>
         {hint && <div className="text-xs text-fg-subtle">{hint}</div>}
+        {footer && <div className="pt-1.5">{footer}</div>}
       </CardContent>
     </Card>
   );
@@ -94,14 +112,185 @@ export function Dashboard() {
   const [createCardOpen, setCreateCardOpen] = useState(false);
   const formatMoney = useFormatMoney();
 
+  const filteredCard = cardFilter
+    ? (cards?.find((c) => c.id === cardFilter) ?? null)
+    : null;
+  const closingDay = filteredCard?.closingDay ?? null;
+  // Previous-period baselines for the delta badges. The month IPC accepts
+  // any YYYY-MM, so "last period" is one more cached query — no new backend
+  // surface. prevTxs feeds the same-point-in-cycle comparison while a
+  // period is still in progress.
+  const prevYm = shiftYearMonth(ym, -1);
+  const { data: prevMonthSummary } = useMonthSummary(
+    prevYm,
+    cardFilter ?? undefined,
+  );
+  const { data: prevTxs } = useTransactions({
+    yearMonth: prevYm,
+    cardId: cardFilter ?? undefined,
+  });
+  const prevYearStr = String(year - 1);
+  const { data: prevYearSummary } = useYearSummary(
+    prevYearStr,
+    cardFilter ?? undefined,
+  );
+  const { months: trailingMonths } = useTrailingMonths(
+    ym,
+    cardFilter ?? undefined,
+  );
+
   // All hooks must be called unconditionally and in the same order on every
   // render. Keep useMemo calls above the empty-state early return so React
   // doesn't see a different hook count before vs after the first card lands.
+
+  // Period math for the month view: statement bounds, days elapsed, spend
+  // so far vs already-registered future rows (parcelas booked past today),
+  // run-rate projection, and the same-point baseline in the previous
+  // period. Every sum follows the backend's sign rule: refunds are stored
+  // positive with isRefund=true and subtract from aggregates.
+  const periodStats = useMemo(() => {
+    if (mode !== "month") return null;
+    const MS_DAY = 86_400_000;
+    const { start, end } = periodBounds(ym, closingDay);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const dayCount = Math.round((end.getTime() - start.getTime()) / MS_DAY) + 1;
+    const isCurrent = today >= start && today <= end;
+    const elapsed = isCurrent
+      ? Math.round((today.getTime() - start.getTime()) / MS_DAY) + 1
+      : dayCount;
+
+    let past = 0;
+    let committedFuture = 0;
+    const pastByCat = new Map<string | null, number>();
+    for (const tx of txs ?? []) {
+      const s = tx.isRefund ? -tx.amountCents : tx.amountCents;
+      if (tx.postedAt.slice(0, 10) <= todayIso) {
+        past += s;
+        const k = tx.categoryId ?? null;
+        pastByCat.set(k, (pastByCat.get(k) ?? 0) + s);
+      } else {
+        committedFuture += s;
+      }
+    }
+    const remaining = Math.max(0, dayCount - elapsed);
+    const runRate = elapsed > 0 ? past / elapsed : 0;
+    // Projection = known spend + already-booked future rows + run-rate over
+    // the remaining days. Only meaningful while the period is in progress —
+    // a closed month has a real total and a future one has nothing to
+    // extrapolate from.
+    const projection = isCurrent
+      ? Math.round(past + committedFuture + runRate * remaining)
+      : null;
+    const total = summary?.totalCents ?? 0;
+    const dailyAvg = isCurrent ? runRate : dayCount > 0 ? total / dayCount : 0;
+
+    // Baseline for the pace badge: an in-progress period compares against
+    // the previous period truncated at the same day offset ("am I ahead of
+    // where I was last month?"); a closed period compares total vs total.
+    let paceBaseline: number | null = null;
+    let prevSameByCat: Map<string | null, number> | null = null;
+    if (isCurrent) {
+      if (prevTxs) {
+        const prevStart = periodBounds(prevYm, closingDay).start;
+        paceBaseline = 0;
+        prevSameByCat = new Map();
+        for (const tx of prevTxs) {
+          const [py, pm, pd] = tx.postedAt.slice(0, 10).split("-").map(Number);
+          const offset =
+            Math.round(
+              (new Date(py, pm - 1, pd).getTime() - prevStart.getTime()) / MS_DAY,
+            ) + 1;
+          if (offset > elapsed) continue;
+          const s = tx.isRefund ? -tx.amountCents : tx.amountCents;
+          paceBaseline += s;
+          const k = tx.categoryId ?? null;
+          prevSameByCat.set(k, (prevSameByCat.get(k) ?? 0) + s);
+        }
+      }
+    } else if (prevMonthSummary) {
+      paceBaseline = prevMonthSummary.totalCents;
+      prevSameByCat = new Map(
+        prevMonthSummary.byCategory.map((e) => [e.categoryId, e.totalCents]),
+      );
+    }
+
+    const prevB = periodBounds(prevYm, closingDay);
+    const prevDayCount =
+      Math.round((prevB.end.getTime() - prevB.start.getTime()) / MS_DAY) + 1;
+    const prevDailyAvg =
+      prevMonthSummary && prevDayCount > 0
+        ? prevMonthSummary.totalCents / prevDayCount
+        : null;
+
+    return {
+      isCurrent,
+      remaining,
+      dailyAvg,
+      projection,
+      paceNow: isCurrent ? past : total,
+      paceBaseline,
+      prevDailyAvg,
+      pastByCat,
+      prevSameByCat,
+    };
+  }, [mode, ym, closingDay, txs, summary, prevTxs, prevMonthSummary, prevYm]);
+
+  // Year-mode counterparts. The same-point baseline against the previous
+  // year is month-granular: full prior months plus the current month
+  // pro-rated by day-of-month — coarse, but honest enough at year scale.
+  const yearStats = useMemo(() => {
+    if (mode !== "year" || !yearSummary) return null;
+    const now = new Date();
+    const isCurrentYear = now.getFullYear() === year;
+    const monthsElapsed = isCurrentYear ? now.getMonth() + 1 : 12;
+    const monthlyAvg =
+      monthsElapsed > 0 ? yearSummary.totalCents / monthsElapsed : 0;
+    const prevMonthlyAvg = prevYearSummary
+      ? prevYearSummary.totalCents / 12
+      : null;
+    let paceBaseline: number | null = null;
+    if (prevYearSummary) {
+      if (!isCurrentYear) {
+        paceBaseline = prevYearSummary.totalCents;
+      } else {
+        const m = now.getMonth();
+        const daysInMonth = new Date(year, m + 1, 0).getDate();
+        const frac = now.getDate() / daysInMonth;
+        paceBaseline = prevYearSummary.byMonth.reduce((s, b, i) => {
+          if (i < m) return s + b.totalCents;
+          if (i === m) return s + b.totalCents * frac;
+          return s;
+        }, 0);
+      }
+    }
+    return { isCurrentYear, monthlyAvg, prevMonthlyAvg, paceBaseline };
+  }, [mode, yearSummary, prevYearSummary, year]);
+
   const topCategories = useMemo(() => {
     if (!summary || !categories) return [];
     const total = summary.totalCents || 1;
+    // Per-category baseline for the legend deltas: same-point sums while a
+    // month is in progress, the full previous period once it's closed, the
+    // full previous year in year mode. Skipped for the in-progress year,
+    // where no cheap honest baseline exists.
+    let baseline: Map<string | null, number> | null = null;
+    if (mode === "month") {
+      baseline = periodStats?.prevSameByCat ?? null;
+    } else if (yearStats && !yearStats.isCurrentYear && prevYearSummary) {
+      baseline = new Map(
+        prevYearSummary.byCategory.map((e) => [e.categoryId, e.totalCents]),
+      );
+    }
+    // While the period is in progress the displayed total includes booked
+    // future parcelas, but the delta must compare like with like: spend so
+    // far vs the truncated previous period.
+    const currentSide =
+      mode === "month" && periodStats?.isCurrent ? periodStats.pastByCat : null;
     return summary.byCategory.slice(0, 6).map((entry) => {
       const cat = categories.find((c) => c.id === entry.categoryId);
+      const key = entry.categoryId ?? null;
       return {
         id: entry.categoryId ?? "_",
         name: cat
@@ -112,9 +301,11 @@ export function Dashboard() {
         // Clamp at 100 — rounding can push the sum of a few categories over
         // 100% by a hair when the underlying totals don't divide evenly.
         pct: Math.min(100, Math.round((entry.totalCents / total) * 100)),
+        deltaNow: currentSide ? (currentSide.get(key) ?? 0) : entry.totalCents,
+        prevCents: baseline?.get(key) ?? null,
       };
     });
-  }, [summary, categories, t]);
+  }, [summary, categories, t, mode, periodStats, yearStats, prevYearSummary]);
 
   // Month-by-month bar data for the year view. Empty array in month mode —
   // the bar chart isn't rendered there. Uses the active i18n locale for the
@@ -144,15 +335,6 @@ export function Dashboard() {
     }
     return groups.size;
   }, [txs]);
-
-  // "Active" cards = cards with at least one transaction in the picked
-  // month. The previous version counted every registered card, contradicting
-  // the "with recent activity" hint right under the number.
-  const cardsActive = useMemo(() => {
-    if (!summary || !cards) return 0;
-    const idsWithActivity = new Set(summary.byCard.map((b) => b.cardId));
-    return cards.filter((c) => idsWithActivity.has(c.id)).length;
-  }, [summary, cards]);
 
   const nextDue = useMemo(() => {
     if (!cards || cards.length === 0) return null;
@@ -240,10 +422,18 @@ export function Dashboard() {
     );
   }
 
-  const filteredCard = cardFilter ? cards?.find((c) => c.id === cardFilter) : null;
   const headerSubtitle = filteredCard
     ? t("route.dashboard.statement_subtitle", { card: filteredCard.name })
     : t("route.dashboard.subtitle");
+  // Legend deltas only get a column when at least one category has a
+  // baseline — otherwise the empty reserved width just shifts the layout.
+  const hasCategoryBaseline = topCategories.some((c) => c.prevCents !== null);
+  const categoryDeltaTitle =
+    mode === "month"
+      ? periodStats?.isCurrent
+        ? t("stats.vs_same_point")
+        : t("stats.vs_prev_month")
+      : t("stats.vs_prev_year");
 
   return (
     <div className="pb-10">
@@ -265,17 +455,79 @@ export function Dashboard() {
             label={mode === "year" ? t("stats.year_total") : t("stats.month_total")}
             value={formatMoney(summary?.totalCents ?? 0)}
             hint={t("stats.transactions_count", { count: txs?.length ?? 0 })}
+            badge={
+              mode === "month" && periodStats ? (
+                <DeltaBadge
+                  current={periodStats.paceNow}
+                  previous={periodStats.paceBaseline}
+                  title={
+                    periodStats.isCurrent
+                      ? t("stats.vs_same_point")
+                      : t("stats.vs_prev_month")
+                  }
+                />
+              ) : mode === "year" && yearStats ? (
+                <DeltaBadge
+                  current={yearSummary?.totalCents ?? 0}
+                  previous={yearStats.paceBaseline}
+                  title={
+                    yearStats.isCurrentYear
+                      ? t("stats.vs_same_point_year")
+                      : t("stats.vs_prev_year")
+                  }
+                />
+              ) : undefined
+            }
+            footer={
+              mode === "month" && trailingMonths && trailingMonths.length >= 2 ? (
+                <span title={t("stats.trend_12m")}>
+                  <Sparkline data={trailingMonths.map((b) => b.totalCents)} />
+                </span>
+              ) : undefined
+            }
           />
-          <Stat
-            label={t("stats.active_installments")}
-            value={String(installmentsActive)}
-            hint={t("stats.installments_hint")}
-          />
-          <Stat
-            label={t("stats.active_cards")}
-            value={String(cardsActive)}
-            hint={t("stats.active_cards_hint")}
-          />
+          {mode === "month" && periodStats ? (
+            <Stat
+              label={t("stats.daily_avg")}
+              value={formatMoney(Math.round(periodStats.dailyAvg))}
+              hint={t("stats.daily_avg_hint")}
+              badge={
+                <DeltaBadge
+                  current={periodStats.dailyAvg}
+                  previous={periodStats.prevDailyAvg}
+                  title={t("stats.vs_prev_month")}
+                />
+              }
+            />
+          ) : (
+            <Stat
+              label={t("stats.monthly_avg")}
+              value={formatMoney(Math.round(yearStats?.monthlyAvg ?? 0))}
+              hint={t("stats.monthly_avg_hint")}
+              badge={
+                yearStats ? (
+                  <DeltaBadge
+                    current={yearStats.monthlyAvg}
+                    previous={yearStats.prevMonthlyAvg}
+                    title={t("stats.vs_prev_year")}
+                  />
+                ) : undefined
+              }
+            />
+          )}
+          {mode === "month" && periodStats?.projection !== null && periodStats?.projection !== undefined ? (
+            <Stat
+              label={t("stats.projection")}
+              value={formatMoney(periodStats.projection)}
+              hint={t("stats.projection_hint", { count: periodStats.remaining })}
+            />
+          ) : (
+            <Stat
+              label={t("stats.active_installments")}
+              value={String(installmentsActive)}
+              hint={t("stats.installments_hint")}
+            />
+          )}
           <Stat
             label={t("stats.next_due")}
             value={nextDue ? t("stats.due_day_format", { day: nextDue.dueDay }) : t("common.empty_dash")}
@@ -422,6 +674,18 @@ export function Dashboard() {
                         <span className="text-xs text-fg-subtle tabular w-10 text-right">
                           {c.pct}%
                         </span>
+                        {hasCategoryBaseline && (
+                          <span className="w-9 text-right shrink-0">
+                            {c.prevCents !== null && c.prevCents > 0 && (
+                              <DeltaBadge
+                                compact
+                                current={c.deltaNow}
+                                previous={c.prevCents}
+                                title={categoryDeltaTitle}
+                              />
+                            )}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

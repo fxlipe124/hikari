@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn, currentYearMonth, monthLabel } from "@/lib/utils";
-
-function shift(ym: string, deltaMonths: number): string {
-  const [y, m] = ym.split("-").map(Number);
-  const d = new Date(y, m - 1 + deltaMonths, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+import { cn, currentYearMonth, monthLabel, shiftYearMonth as shift } from "@/lib/utils";
 
 export function MonthPicker({
   value,
