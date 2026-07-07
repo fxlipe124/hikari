@@ -129,6 +129,13 @@ export function Dashboard() {
   // dims every other slice/row.
   const [activeCatId, setActiveCatId] = useState<string | null>(null);
   const formatMoney = useFormatMoney();
+  // Recharts series animations don't respect prefers-reduced-motion on
+  // their own. Read once per mount — the preference doesn't change often
+  // enough to warrant a listener.
+  const reduceMotion = useMemo(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
 
   const filteredCard = cardFilter
     ? (cards?.find((c) => c.id === cardFilter) ?? null)
@@ -255,36 +262,64 @@ export function Dashboard() {
     };
   }, [mode, ym, closingDay, txs, summary, prevTxs, prevMonthSummary, prevYm]);
 
-  // Year-mode counterparts. The same-point baseline against the previous
-  // year is month-granular: full prior months plus the current month
-  // pro-rated by day-of-month — coarse, but honest enough at year scale.
+  // Year-mode counterparts. "Today"'s position within the year is derived
+  // in the same terms as the buckets — statement periods when a card is
+  // filtered (a July 7th past the closing day already sits in the August
+  // statement), calendar months otherwise. The pace side counts only spend
+  // actually incurred (postedAt <= today, refund-aware), mirroring month
+  // mode, so future-booked parcelas don't inflate the year-over-year badge
+  // or the monthly average. The prev-year baseline is month-granular: full
+  // prior buckets plus the in-progress bucket pro-rated by days elapsed —
+  // coarse, but honest enough at year scale.
   const yearStats = useMemo(() => {
     if (mode !== "year" || !yearSummary) return null;
+    const MS_DAY = 86_400_000;
     const now = new Date();
-    const isCurrentYear = now.getFullYear() === year;
-    const monthsElapsed = isCurrentYear ? now.getMonth() + 1 : 12;
-    const monthlyAvg =
-      monthsElapsed > 0 ? yearSummary.totalCents / monthsElapsed : 0;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const curYm =
+      closingDay != null
+        ? statementPeriod(todayIso, closingDay)
+        : currentYearMonth();
+    const isCurrentYear = curYm.slice(0, 4) === String(year);
+    const bucketIdx = isCurrentYear
+      ? parseInt(curYm.slice(5, 7), 10) - 1
+      : 11;
+    const monthsElapsed = bucketIdx + 1;
+
+    let past = 0;
+    for (const tx of txs ?? []) {
+      const s = tx.isRefund ? -tx.amountCents : tx.amountCents;
+      if (tx.postedAt.slice(0, 10) <= todayIso) past += s;
+    }
+    const paceNow = isCurrentYear ? past : yearSummary.totalCents;
+    const monthlyAvg = monthsElapsed > 0 ? paceNow / monthsElapsed : 0;
     const prevMonthlyAvg = prevYearSummary
       ? prevYearSummary.totalCents / 12
       : null;
+
     let paceBaseline: number | null = null;
     if (prevYearSummary) {
       if (!isCurrentYear) {
         paceBaseline = prevYearSummary.totalCents;
       } else {
-        const m = now.getMonth();
-        const daysInMonth = new Date(year, m + 1, 0).getDate();
-        const frac = now.getDate() / daysInMonth;
+        const { start, end } = periodBounds(curYm, closingDay);
+        const dayCount =
+          Math.round((end.getTime() - start.getTime()) / MS_DAY) + 1;
+        const elapsed = Math.min(
+          dayCount,
+          Math.max(1, Math.round((today.getTime() - start.getTime()) / MS_DAY) + 1),
+        );
+        const frac = dayCount > 0 ? elapsed / dayCount : 1;
         paceBaseline = prevYearSummary.byMonth.reduce((s, b, i) => {
-          if (i < m) return s + b.totalCents;
-          if (i === m) return s + b.totalCents * frac;
+          if (i < bucketIdx) return s + b.totalCents;
+          if (i === bucketIdx) return s + b.totalCents * frac;
           return s;
         }, 0);
       }
     }
-    return { isCurrentYear, monthlyAvg, prevMonthlyAvg, paceBaseline };
-  }, [mode, yearSummary, prevYearSummary, year]);
+    return { isCurrentYear, monthlyAvg, prevMonthlyAvg, paceBaseline, paceNow };
+  }, [mode, yearSummary, prevYearSummary, year, txs, closingDay]);
 
   const topCategories = useMemo(() => {
     if (!summary || !categories) return [];
@@ -370,7 +405,7 @@ export function Dashboard() {
       {
         id: "_others",
         name: t("dashboard.other_categories"),
-        color: "var(--border-strong)",
+        color: "var(--fg-subtle)",
         cents: rest,
         pct: Math.min(100, Math.round((rest / total) * 100)),
         deltaNow: rest,
@@ -415,20 +450,31 @@ export function Dashboard() {
     />
   );
 
+  const headerSubtitle = filteredCard
+    ? t("route.dashboard.statement_subtitle", { card: filteredCard.name })
+    : t("route.dashboard.subtitle");
+
   // Queries still resolving: show the page skeleton instead of falling
   // through to the welcome card — `undefined` data is not an empty vault,
-  // and the old code flashed "Welcome to Hikari" on every unlock.
+  // and the old code flashed "Welcome to Hikari" on every unlock. Header
+  // and card chips render for real (same tree position as the loaded
+  // branch, so React keeps their DOM) — swapping a filter shouldn't yank
+  // the control the user just clicked.
   const isLoading = cardsLoading || txsLoading;
   if (isLoading) {
     return (
       <div className="pb-10">
         <PageHeader
           title={t("route.dashboard.title")}
-          subtitle={t("route.dashboard.subtitle")}
+          subtitle={headerSubtitle}
           actions={periodPicker}
         />
         <div className="space-y-4 px-6 py-4">
-          <Skeleton className="h-[26px] w-64" />
+          <CardFilterChips
+            cards={cards ?? []}
+            value={cardFilter}
+            onChange={setCardFilter}
+          />
           <div className="flex gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-[104px] flex-1 rounded-[var(--radius-lg)]" />
@@ -479,9 +525,6 @@ export function Dashboard() {
     );
   }
 
-  const headerSubtitle = filteredCard
-    ? t("route.dashboard.statement_subtitle", { card: filteredCard.name })
-    : t("route.dashboard.subtitle");
   // Legend deltas only get a column when at least one category has a
   // baseline — otherwise the empty reserved width just shifts the layout.
   const hasCategoryBaseline = topCategories.some((c) => c.prevCents !== null);
@@ -525,7 +568,7 @@ export function Dashboard() {
                 />
               ) : mode === "year" && yearStats ? (
                 <DeltaBadge
-                  current={yearSummary?.totalCents ?? 0}
+                  current={yearStats.paceNow}
                   previous={yearStats.paceBaseline}
                   title={
                     yearStats.isCurrentYear
@@ -576,7 +619,11 @@ export function Dashboard() {
             <Stat
               label={t("stats.projection")}
               value={formatMoney(periodStats.projection)}
-              hint={t("stats.projection_hint", { count: periodStats.remaining })}
+              hint={
+                periodStats.remaining === 0
+                  ? t("stats.projection_hint_last_day")
+                  : t("stats.projection_hint", { count: periodStats.remaining })
+              }
             />
           ) : (
             <Stat
@@ -643,7 +690,7 @@ export function Dashboard() {
                     dataKey="total"
                     radius={[3, 3, 0, 0]}
                     activeBar={{ fill: "var(--accent-hover)" }}
-                    isAnimationActive
+                    isAnimationActive={!reduceMotion}
                     animationBegin={0}
                     animationDuration={250}
                     animationEasing="ease-out"
@@ -686,7 +733,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               {topCategories.length === 0 ? (
-                <EmptyState title={t("dashboard.no_categorized")} className="py-8" />
+                <EmptyState as="p" title={t("dashboard.no_categorized")} className="py-8" />
               ) : (
                 <div className="flex items-center gap-4">
                   <div className="relative shrink-0">
@@ -701,7 +748,7 @@ export function Dashboard() {
                         outerRadius={80}
                         paddingAngle={2}
                         stroke="none"
-                        isAnimationActive
+                        isAnimationActive={!reduceMotion}
                         animationBegin={0}
                         animationDuration={250}
                         animationEasing="ease-out"

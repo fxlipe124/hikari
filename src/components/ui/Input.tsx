@@ -14,7 +14,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         className={cn(
           "flex h-9 w-full rounded-[var(--radius)] border bg-surface px-3 text-sm",
           "text-fg placeholder:text-fg-subtle",
-          "transition-[border-color,box-shadow] duration-[120ms]",
+          "transition-[border-color,box-shadow]",
           "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20",
           "disabled:cursor-not-allowed disabled:opacity-50",
           invalid

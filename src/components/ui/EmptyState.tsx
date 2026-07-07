@@ -7,12 +7,19 @@ export function EmptyState({
   description,
   action,
   className,
+  as: Heading = "h2",
 }: {
   icon?: LucideIcon;
   title: string;
   description?: string;
   action?: React.ReactNode;
   className?: string;
+  /**
+   * Heading element for the title. Use "p" when the empty state lives
+   * inside a card that already has its own heading, so the document
+   * outline doesn't jump backwards.
+   */
+  as?: "h2" | "h3" | "p";
 }) {
   return (
     <div
@@ -27,7 +34,7 @@ export function EmptyState({
         </div>
       )}
       <div className="space-y-1">
-        <h2 className="text-sm font-medium">{title}</h2>
+        <Heading className="text-sm font-medium">{title}</Heading>
         {description && (
           <p className="mx-auto max-w-xs text-xs text-fg-subtle">{description}</p>
         )}

@@ -15,7 +15,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           className={cn(
             "flex h-9 w-full appearance-none rounded-[var(--radius)] border bg-surface pl-3 pr-8 text-sm",
             "text-fg",
-            "transition-[border-color,box-shadow] duration-[120ms]",
+            "transition-[border-color,box-shadow]",
             "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20",
             "disabled:cursor-not-allowed disabled:opacity-50",
             invalid

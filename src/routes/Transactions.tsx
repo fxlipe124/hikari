@@ -354,6 +354,7 @@ export function Transactions() {
             <tr>
               <td colSpan={6} className="px-6 py-4">
                 <EmptyState
+                  as="p"
                   icon={FileText}
                   title={
                     query || cardFilter || activeFilterCount > 0
@@ -393,7 +394,10 @@ export function Transactions() {
                 onKeyDown={(e) => {
                   // Rows are keyboard-reachable: Enter/Space opens the edit
                   // dialog, same as click. Space would also scroll the page,
-                  // hence the preventDefault.
+                  // hence the preventDefault. Bubbled keydowns from the
+                  // selection checkbox must pass through untouched or Space
+                  // stops toggling it.
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     setEditing(tx);

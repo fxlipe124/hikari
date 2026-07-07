@@ -46,6 +46,7 @@ export function DeltaBadge({
   return (
     <span
       title={title}
+      aria-label={`${up ? "+" : "−"}${label}${title ? ` ${title}` : ""}`}
       className={cn(baseClass, up ? "text-danger" : "text-success", className)}
     >
       {compact ? (

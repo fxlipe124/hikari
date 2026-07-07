@@ -177,7 +177,8 @@
     "vs_prev_month": "vs. last month",
     "vs_prev_year": "vs. last year",
     "vs_same_point_year": "vs. the same point last year",
-    "trend_12m": "Last 12 months"
+    "trend_12m": "Last 12 months",
+    "projection_hint_last_day": "last day of the period"
   },
   "transactions": {
     "no_match": "No transactions match these filters",
