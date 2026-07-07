@@ -17,8 +17,7 @@ export const DialogOverlay = forwardRef<
     ref={ref}
     className={cn(
       "fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]",
-      "data-[state=open]:animate-in data-[state=closed]:animate-out",
-      "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+      "data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
       className
     )}
     {...props}
@@ -39,16 +38,14 @@ export const DialogContent = forwardRef<
         "w-full max-w-[640px] max-h-[85vh] overflow-hidden",
         "rounded-[var(--radius-lg)] border border-border bg-surface shadow-lg",
         "flex flex-col",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out",
-        "data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
-        "data-[state=open]:zoom-in-[0.98] data-[state=closed]:zoom-out-[0.98]",
+        "data-[state=open]:animate-dialog-in data-[state=closed]:animate-dialog-out",
         className
       )}
       {...props}
     >
       {children}
       {!hideClose && (
-        <DialogPrimitive.Close className="absolute right-3 top-3 rounded-[var(--radius)] p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg transition-colors focus:outline-none focus:ring-2 focus:ring-accent">
+        <DialogPrimitive.Close className="absolute right-3 top-3 rounded-[var(--radius)] p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg transition-colors">
           <X className="h-4 w-4" />
           <span className="sr-only">{i18n.t("common.close")}</span>
         </DialogPrimitive.Close>
