@@ -5,6 +5,138 @@ All notable changes to Hikari are documented here.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.9] — 2026-07-07
+
+A visual-refinement round across the whole app: the dashboard learns
+to answer "how am I doing?" instead of just "what happened?", both
+charts get a serious polish, and every route converges on the same
+loading / empty / focus patterns. Frontend-only — no Rust file
+changed, no schema migration, existing vaults open untouched.
+
+### Added
+
+- **Spending pace, daily average, projection, and trend on the
+  Dashboard.** The month view's stat row was rebuilt around honest
+  period math:
+  - The **total** gains a pace badge comparing spend so far against
+    the *previous statement period truncated at the same day offset*
+    ("am I ahead of where I was last month?") — not against the full
+    previous month, which would read as a guaranteed improvement
+    until the last week. Closed periods compare total vs. total.
+    A 12-month **sparkline** sits under the number, built by merging
+    two cached year-summary calls (`useTrailingMonths`) so it crosses
+    January without a new IPC.
+  - A **daily average** stat replaces "Active cards" (that count was
+    already visible in the cards panel below). In-progress periods
+    show the running rate (spend ÷ days elapsed); closed periods show
+    total ÷ period length. Its badge compares against the previous
+    period's full-period average.
+  - A **projection** stat appears only while the viewed period
+    contains today and is incomplete: known spend + already-booked
+    future rows (parcelas registered past today) + run-rate over the
+    remaining days. Booked installments are excluded from the
+    run-rate so they aren't extrapolated twice. When the period is
+    closed or in the future the slot shows the Active-installments
+    stat instead — a projection of a finished month would be noise.
+  - The year view gets the same treatment: a **monthly average** and
+    a same-point-of-year baseline (full prior statement buckets plus
+    the in-progress bucket pro-rated by days elapsed). Both sides of
+    the comparison count only spend actually incurred — future-dated
+    parcelas booked through December don't inflate the year badge.
+  - **Delta semantics are inverted on purpose:** every number in
+    Hikari is an expense, so spending *more* renders red with an up
+    arrow, spending *less* renders green, and a missing baseline
+    (empty previous period, first month of data) renders a neutral
+    dash instead of an infinite percentage.
+  - The donut legend gains a compact **per-category delta** with the
+    same rules, using exact per-category same-point sums while the
+    month is in progress.
+- **"Others" slice in the category donut.** The pie normalizes slice
+  angles to whatever data it receives, so a top-6-only donut drew
+  angles that didn't match the percentages printed in the legend
+  whenever more than six categories had spend. The remainder is now
+  aggregated into a muted, non-clickable slice — angles and legend
+  finally agree. The hollow center shows the period total, and
+  hovering a slice or legend row cross-highlights both sides.
+- **Skeleton loading on every route.** The `.skeleton` shimmer class
+  had existed since v0.1.0 without a single consumer. Dashboard,
+  Transactions, Cards, Categories, and Installments now render
+  layout-matching placeholders while their first fetch resolves.
+- **Standardized empty states.** One `EmptyState` component (icon in
+  a muted circle, title, description, optional action) replaces the
+  four divergent ad-hoc layouts — and Categories, which previously
+  rendered a blank void when empty, gets one too.
+- **Keyboard support on transaction rows**: rows are focusable,
+  Enter/Space opens the edit dialog, and the focus ring draws inset
+  so the table's overflow doesn't clip it. Space on the selection
+  checkbox still toggles selection.
+
+### Changed
+
+- **The year bar chart is responsive** — it was hard-coded at 760px
+  and either overflowed or floated in the card. It now follows the
+  window, gains subtle horizontal gridlines, renders the in-progress
+  statement period in full accent while other months sit at 55%
+  opacity, and animates in 250ms instead of the ~1.5s Recharts
+  default. The Y axis reuses `formatCompact`. Both charts share one
+  token-styled `ChartTooltip` instead of inline style objects; the
+  bar tooltip adds a month-over-month delta.
+- **Motion is now a design token.** `--default-transition-duration:
+  120ms` + ease-out in the Tailwind theme, so every bare
+  `transition-*` utility in the app inherits the same pace — the
+  per-component `duration-[120ms]` overrides were removed as
+  redundant.
+- **One header layout for all six routes** (`PageHeader`): title,
+  subtitle, right-aligned actions — ending the items-center vs.
+  items-end drift between Dashboard/Transactions and the CRUD pages.
+  The duplicated card-filter chip row was extracted into
+  `CardFilterChips`.
+- **Density pass on the Dashboard**: recent-transactions rows match
+  the Transactions table (`py-2`), and the content sits in a single
+  `px-6 py-4` wrapper.
+- **Contrast tuning**: dark-mode `--fg-subtle` lifted 0.55 → 0.62
+  oklch (hint text over muted surfaces was borderline), light-mode
+  `--success` darkened for the new 10px delta text, and focus-visible
+  outlines now also cover links, selects, and `tabindex` elements —
+  the sidebar navigation had no ring at all.
+- **`prefers-reduced-motion` is honored**: skeleton shimmer, dialog
+  animations, and both Recharts series animations shut off.
+
+### Fixed
+
+- **Dialog open/close animations never ran.** `Dialog.tsx` used
+  `animate-in`/`fade-in-0`/`zoom-in-[0.98]` utility classes from a
+  Tailwind plugin that was never installed, so every dialog since
+  v0.1.0 popped in with no motion. Replaced with first-party
+  keyframes in the Tailwind 4 theme (140ms in, 100ms out).
+- **"Welcome to Hikari" flashed on every unlock.** The empty-vault
+  check treated still-loading queries (`undefined`) as an empty
+  vault, so the onboarding card blinked before data arrived. Loading
+  now renders skeletons; the welcome only appears once the vault is
+  confirmed empty.
+- **Donut slice angles didn't match the legend percentages** on any
+  vault with more than six active categories (see the "Others" slice
+  above).
+
+### Under the hood
+
+- New primitives: `Skeleton`, `EmptyState`, `PageHeader`,
+  `DeltaBadge`, `Sparkline` (hand-rolled SVG — Recharts would be
+  overkill for 12 points), `CardFilterChips`, `ChartTooltip`.
+- New helpers: `shiftYearMonth` (promoted from MonthPicker) and
+  `periodBounds` — the inverse of `statementPeriod`, clamped at month
+  edges so a closing day past the end of a short month resolves the
+  same way the Rust side buckets it.
+- Every frontend sum follows the backend's sign rule (refunds stored
+  positive with `is_refund=true` subtract from aggregates), and all
+  period comparisons are statement-aware when a card filter is
+  active.
+- The whole round was reviewed by an adversarial multi-agent pass
+  before release; eleven confirmed findings (year-mode pace counting
+  future parcelas, Space-on-checkbox hijack, reduced-motion selectors
+  that never matched, skeleton unmounting the filter chips mid-click,
+  contrast misses) were fixed in the final commit.
+
 ## [0.1.8] — 2026-04-27
 
 ### Added
@@ -304,6 +436,7 @@ offline, with paste-and-PDF import for any issuer.
   Developer notarization for a signed bundle).
 - No auto-updater. Releases are manual downloads from GitHub Releases.
 
+[0.1.9]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.9
 [0.1.8]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.8
 [0.1.7]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.7
 [0.1.6]: https://github.com/fxlipe124/hikari/releases/tag/v0.1.6
