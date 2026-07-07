@@ -2,7 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ArrowUpRight, CreditCard, Plus } from "lucide-react";
-import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PeriodPicker } from "@/components/ui/PeriodPicker";
@@ -12,6 +23,7 @@ import { DeltaBadge } from "@/components/ui/DeltaBadge";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { PageHeader } from "@/components/PageHeader";
 import { CardFilterChips } from "@/components/CardFilterChips";
+import { ChartTooltip } from "@/components/charts/ChartTooltip";
 import { CardDialog } from "@/components/CardDialog";
 import {
   useCards,
@@ -24,10 +36,13 @@ import {
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import {
   cn,
+  currentYearMonth,
+  formatCompact,
   formatDate,
   monthLabel,
   periodBounds,
   shiftYearMonth,
+  statementPeriod,
   useFormatMoney,
 } from "@/lib/utils";
 
@@ -110,6 +125,9 @@ export function Dashboard() {
   );
   const { data: categories } = useCategories();
   const [createCardOpen, setCreateCardOpen] = useState(false);
+  // Cross-highlight between the donut and its legend: hovering either side
+  // dims every other slice/row.
+  const [activeCatId, setActiveCatId] = useState<string | null>(null);
   const formatMoney = useFormatMoney();
 
   const filteredCard = cardFilter
@@ -314,13 +332,52 @@ export function Dashboard() {
   const monthsBar = useMemo(() => {
     if (mode !== "year" || !yearSummary) return [];
     const fmt = new Intl.DateTimeFormat(i18n.language, { month: "short" });
-    return yearSummary.byMonth.map((b) => {
+    return yearSummary.byMonth.map((b, i, arr) => {
       const monthIdx = parseInt(b.yearMonth.slice(5, 7), 10) - 1;
       const date = new Date(year, monthIdx, 1);
       const label = fmt.format(date);
-      return { ym: b.yearMonth, label, total: b.totalCents };
+      return {
+        ym: b.yearMonth,
+        label,
+        total: b.totalCents,
+        // Previous bucket's total feeds the tooltip's month-over-month
+        // delta without a second lookup at hover time.
+        prevTotal: i > 0 ? arr[i - 1].totalCents : null,
+      };
     });
   }, [mode, yearSummary, year, i18n.language]);
+
+  // The statement (or calendar) period that "today" falls into — used to
+  // render the in-progress bar in full accent while the rest stay muted.
+  const currentPeriodYm = useMemo(() => {
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return closingDay != null ? statementPeriod(iso, closingDay) : currentYearMonth();
+  }, [closingDay]);
+
+  // Donut data = top-6 categories plus an aggregated "Others" slice so the
+  // slice angles actually match the legend percentages (the pie normalizes
+  // angles to the sum of what it's given — top-6 alone distorts them
+  // whenever more than 6 categories have spend).
+  const donutData = useMemo(() => {
+    if (!summary || topCategories.length === 0) return [];
+    const total = summary.totalCents || 1;
+    const topSum = topCategories.reduce((s, c) => s + c.cents, 0);
+    const rest = summary.totalCents - topSum;
+    if (rest <= 0) return topCategories;
+    return [
+      ...topCategories,
+      {
+        id: "_others",
+        name: t("dashboard.other_categories"),
+        color: "var(--border-strong)",
+        cents: rest,
+        pct: Math.min(100, Math.round((rest / total) * 100)),
+        deltaNow: rest,
+        prevCents: null,
+      },
+    ];
+  }, [summary, topCategories, t]);
 
   const recent = useMemo(() => (txs ?? []).slice(0, 8), [txs]);
 
@@ -543,57 +600,78 @@ export function Dashboard() {
               <span className="text-xs text-fg-subtle tabular">{year}</span>
             </CardHeader>
             <CardContent className="pt-0">
-              <BarChart width={760} height={180} data={monthsBar}>
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
-                  axisLine={{ stroke: "var(--border)" }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={48}
-                  tickFormatter={(v) => {
-                    const n = Number(v);
-                    if (!Number.isFinite(n)) return "";
-                    if (Math.abs(n) >= 100000) return `${Math.round(n / 100000) / 10}k`;
-                    return String(n / 100);
-                  }}
-                />
-                <Tooltip
-                  cursor={{ fill: "var(--surface-hover)" }}
-                  formatter={(value) => {
-                    const n = Number(value);
-                    return Number.isFinite(n) ? formatMoney(n) : "";
-                  }}
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius)",
-                    fontSize: "12px",
-                    padding: "6px 10px",
-                  }}
-                  labelStyle={{ color: "var(--fg)" }}
-                />
-                <Bar
-                  dataKey="total"
-                  fill="var(--accent)"
-                  radius={[3, 3, 0, 0]}
-                  onClick={(d: unknown) => {
-                    const ymHit = (d as { ym?: string } | undefined)?.ym;
-                    if (ymHit) {
-                      // Drill into the picked month — flips the store back
-                      // to month mode so the user sees the standard view
-                      // for that fatura.
-                      setMode("month");
-                      setYm(ymHit);
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={monthsBar}>
+                  <CartesianGrid vertical={false} stroke="var(--border)" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
+                    axisLine={{ stroke: "var(--border)" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "var(--fg-subtle)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={48}
+                    tickFormatter={(v) => {
+                      const n = Number(v);
+                      return Number.isFinite(n) ? formatCompact(n) : "";
+                    }}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "var(--surface-hover)" }}
+                    content={
+                      <ChartTooltip
+                        formatter={formatMoney}
+                        renderExtra={(datum) => {
+                          const row = datum as
+                            | { total?: number; prevTotal?: number | null }
+                            | undefined;
+                          return row?.prevTotal != null && row.prevTotal > 0 ? (
+                            <DeltaBadge
+                              compact
+                              current={row.total ?? 0}
+                              previous={row.prevTotal}
+                            />
+                          ) : null;
+                        }}
+                      />
                     }
-                  }}
-                  className="cursor-pointer"
-                />
-              </BarChart>
+                  />
+                  <Bar
+                    dataKey="total"
+                    radius={[3, 3, 0, 0]}
+                    activeBar={{ fill: "var(--accent-hover)" }}
+                    isAnimationActive
+                    animationBegin={0}
+                    animationDuration={250}
+                    animationEasing="ease-out"
+                    onClick={(d: unknown) => {
+                      const ymHit = (d as { ym?: string } | undefined)?.ym;
+                      if (ymHit) {
+                        // Drill into the picked month — flips the store back
+                        // to month mode so the user sees the standard view
+                        // for that fatura.
+                        setMode("month");
+                        setYm(ymHit);
+                      }
+                    }}
+                    className="cursor-pointer"
+                  >
+                    {monthsBar.map((b) => (
+                      <Cell
+                        key={b.ym}
+                        fill={
+                          b.ym === currentPeriodYm
+                            ? "var(--accent)"
+                            : "color-mix(in oklch, var(--accent) 55%, transparent)"
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
         )}
@@ -611,60 +689,93 @@ export function Dashboard() {
                 <EmptyState title={t("dashboard.no_categorized")} className="py-8" />
               ) : (
                 <div className="flex items-center gap-4">
-                  <PieChart width={180} height={180}>
-                    <Pie
-                      data={topCategories}
-                      dataKey="cents"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      stroke="none"
-                      onClick={(slice: unknown) => {
-                        const id = (slice as { id?: string } | undefined)?.id;
-                        if (id && id !== "_") {
-                          // Carry the dashboard's selected period so the
-                          // Transactions page opens scoped to the same
-                          // window — without it, it falls back to
-                          // currentYearMonth() and the click looks broken
-                          // when browsing past months / years.
-                          navigate("/transactions", {
-                            state:
-                              mode === "year"
-                                ? { year: yearStr, categoryIds: [id] }
-                                : { ym, categoryIds: [id] },
-                          });
+                  <div className="relative shrink-0">
+                    <PieChart width={180} height={180}>
+                      <Pie
+                        data={donutData}
+                        dataKey="cents"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        stroke="none"
+                        isAnimationActive
+                        animationBegin={0}
+                        animationDuration={250}
+                        animationEasing="ease-out"
+                        onMouseEnter={(_, index) =>
+                          setActiveCatId(donutData[index]?.id ?? null)
                         }
-                      }}
-                    >
-                      {topCategories.map((c) => (
-                        <Cell
-                          key={c.id}
-                          fill={c.color}
-                          className="cursor-pointer outline-none"
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => {
-                        const n = Number(value);
-                        return Number.isFinite(n) ? formatMoney(n) : "";
-                      }}
-                      contentStyle={{
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "var(--radius)",
-                        fontSize: "12px",
-                        padding: "6px 10px",
-                      }}
-                      labelStyle={{ color: "var(--fg)" }}
-                    />
-                  </PieChart>
+                        onMouseLeave={() => setActiveCatId(null)}
+                        onClick={(slice: unknown) => {
+                          const id = (slice as { id?: string } | undefined)?.id;
+                          if (id && id !== "_" && id !== "_others") {
+                            // Carry the dashboard's selected period so the
+                            // Transactions page opens scoped to the same
+                            // window — without it, it falls back to
+                            // currentYearMonth() and the click looks broken
+                            // when browsing past months / years.
+                            navigate("/transactions", {
+                              state:
+                                mode === "year"
+                                  ? { year: yearStr, categoryIds: [id] }
+                                  : { ym, categoryIds: [id] },
+                            });
+                          }
+                        }}
+                      >
+                        {donutData.map((c) => (
+                          <Cell
+                            key={c.id}
+                            fill={c.color}
+                            fillOpacity={
+                              activeCatId && activeCatId !== c.id ? 0.35 : 1
+                            }
+                            className={cn(
+                              "outline-none transition-[fill-opacity]",
+                              c.id !== "_others" && c.id !== "_" && "cursor-pointer",
+                            )}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        content={
+                          <ChartTooltip
+                            formatter={formatMoney}
+                            renderExtra={(datum) => {
+                              const row = datum as { pct?: number } | undefined;
+                              return row?.pct !== undefined ? (
+                                <span className="text-fg-subtle tabular">
+                                  {row.pct}%
+                                </span>
+                              ) : null;
+                            }}
+                          />
+                        }
+                      />
+                    </PieChart>
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-[10px] text-fg-subtle">
+                        {mode === "year" ? t("stats.year_total") : t("stats.month_total")}
+                      </span>
+                      <span className="text-sm font-semibold tabular tracking-tight">
+                        {formatMoney(summary?.totalCents ?? 0)}
+                      </span>
+                    </div>
+                  </div>
                   <div className="flex-1 space-y-2 min-w-0">
-                    {topCategories.map((c) => (
-                      <div key={c.id} className="flex items-center gap-2 text-sm">
+                    {donutData.map((c) => (
+                      <div
+                        key={c.id}
+                        onMouseEnter={() => setActiveCatId(c.id)}
+                        onMouseLeave={() => setActiveCatId(null)}
+                        className={cn(
+                          "flex items-center gap-2 text-sm transition-opacity",
+                          activeCatId && activeCatId !== c.id && "opacity-40",
+                        )}
+                      >
                         <span
                           className="h-2 w-2 rounded-full shrink-0"
                           style={{ backgroundColor: c.color }}

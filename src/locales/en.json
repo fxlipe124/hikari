@@ -130,7 +130,8 @@
     "add_card_prompt": "Add a card",
     "limit_usage": "{{pct}}% of {{limit}}",
     "year_by_month": "Spending by month",
-    "year_total_label": "{{year}} total"
+    "year_total_label": "{{year}} total",
+    "other_categories": "Others"
   },
   "import_preview": {
     "reference_year": "Year",
