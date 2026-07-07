@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { CurrencyToggle } from "@/components/CurrencyToggle";
+import { PageHeader } from "@/components/PageHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { useVaultStore } from "@/hooks/useVaultStore";
 import { loadConfig, setAutolockMinutes } from "@/lib/config";
@@ -98,10 +99,10 @@ export function Settings() {
 
   return (
     <div>
-      <div className="border-b border-border px-6 py-5">
-        <h1 className="text-xl font-semibold tracking-tight">{t("route.settings.title")}</h1>
-        <p className="mt-0.5 text-sm text-fg-muted">{t("route.settings.subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("route.settings.title")}
+        subtitle={t("route.settings.subtitle")}
+      />
 
       <div className="p-6 max-w-2xl space-y-4">
         <Card>

@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus } from "lucide-react";
+import { FolderTree, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { CategoryDialog } from "@/components/CategoryDialog";
 import { useCategories } from "@/lib/queries";
 import type { Category } from "@/lib/ipc";
 
 export function Categories() {
   const { t } = useTranslation();
-  const { data: categories } = useCategories();
+  const { data: categories, isLoading } = useCategories();
   const roots = (categories ?? []).filter((c) => !c.parentId);
   const [open, setOpen] = useState(false);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -32,20 +35,35 @@ export function Categories() {
 
   return (
     <div>
-      <div className="flex items-end justify-between border-b border-border px-6 py-5">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{t("route.categories.title")}</h1>
-          <p className="mt-0.5 text-sm text-fg-muted">
-            {t("route.categories.count", { count: categories?.length ?? 0 })}
-          </p>
-        </div>
-        <Button size="sm" onClick={newRoot}>
-          <Plus className="h-3.5 w-3.5" />
-          {t("common.new_category")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("route.categories.title")}
+        subtitle={t("route.categories.count", { count: categories?.length ?? 0 })}
+        actions={
+          <Button size="sm" onClick={newRoot}>
+            <Plus className="h-3.5 w-3.5" />
+            {t("common.new_category")}
+          </Button>
+        }
+      />
 
       <div className="px-6 py-6 space-y-1">
+        {isLoading &&
+          Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        {!isLoading && roots.length === 0 && (
+          <EmptyState
+            icon={FolderTree}
+            title={t("categories.empty_title")}
+            description={t("categories.empty_description")}
+            action={
+              <Button size="sm" onClick={newRoot}>
+                <Plus className="h-3.5 w-3.5" />
+                {t("common.new_category")}
+              </Button>
+            }
+          />
+        )}
         {roots.map((root) => {
           const children = (categories ?? []).filter((c) => c.parentId === root.id);
           return (

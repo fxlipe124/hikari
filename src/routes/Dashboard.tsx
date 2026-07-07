@@ -6,6 +6,10 @@ import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recha
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { PeriodPicker } from "@/components/ui/PeriodPicker";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { CardFilterChips } from "@/components/CardFilterChips";
 import { CardDialog } from "@/components/CardDialog";
 import {
   useCards,
@@ -16,25 +20,6 @@ import {
 } from "@/lib/queries";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
 import { cn, formatDate, monthLabel, useFormatMoney } from "@/lib/utils";
-
-function PeriodHeader({
-  subtitle,
-  children,
-}: {
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="border-b border-border px-6 py-5">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight capitalize">{t("route.dashboard.title")}</h1>
-        {children}
-      </div>
-      {subtitle && <p className="mt-0.5 text-sm text-fg-muted">{subtitle}</p>}
-    </div>
-  );
-}
 
 function Stat({
   label,
@@ -84,7 +69,7 @@ export function Dashboard() {
   // we fall back to calendar month/year since multi-card statements have no
   // shared period.
   const [cardFilter, setCardFilter] = useState<string | null>(null);
-  const { data: cards } = useCards();
+  const { data: cards, isLoading: cardsLoading } = useCards();
   // Auto-default to the only card when the vault has exactly one card. With
   // a single card, "All cards" and that card are semantically the same set of
   // rows but treated differently by the period filter (calendar vs
@@ -100,7 +85,7 @@ export function Dashboard() {
   const { data: monthSummary } = useMonthSummary(ym, cardFilter ?? undefined);
   const { data: yearSummary } = useYearSummary(yearStr, cardFilter ?? undefined);
   const summary = mode === "month" ? monthSummary : yearSummary;
-  const { data: txs } = useTransactions(
+  const { data: txs, isLoading: txsLoading } = useTransactions(
     mode === "month"
       ? { yearMonth: ym, cardId: cardFilter ?? undefined }
       : { year: yearStr, cardId: cardFilter ?? undefined },
@@ -191,29 +176,62 @@ export function Dashboard() {
     />
   );
 
+  // Queries still resolving: show the page skeleton instead of falling
+  // through to the welcome card — `undefined` data is not an empty vault,
+  // and the old code flashed "Welcome to Hikari" on every unlock.
+  const isLoading = cardsLoading || txsLoading;
+  if (isLoading) {
+    return (
+      <div className="pb-10">
+        <PageHeader
+          title={t("route.dashboard.title")}
+          subtitle={t("route.dashboard.subtitle")}
+          actions={periodPicker}
+        />
+        <div className="space-y-4 px-6 py-4">
+          <Skeleton className="h-[26px] w-64" />
+          <div className="flex gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[104px] flex-1 rounded-[var(--radius-lg)]" />
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-4">
+            <Skeleton className="col-span-3 h-60 rounded-[var(--radius-lg)]" />
+            <Skeleton className="col-span-2 h-60 rounded-[var(--radius-lg)]" />
+          </div>
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isEmpty = (cards?.length ?? 0) === 0 && (txs?.length ?? 0) === 0;
   if (isEmpty) {
     return (
       <div className="pb-10">
-        <PeriodHeader subtitle={t("route.dashboard.subtitle")}>{periodPicker}</PeriodHeader>
+        <PageHeader
+          title={t("route.dashboard.title")}
+          subtitle={t("route.dashboard.subtitle")}
+          actions={periodPicker}
+        />
         <div className="px-6 py-12">
           <div className="mx-auto max-w-md">
             <Card>
-              <CardContent className="py-10 text-center space-y-4">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
-                  <CreditCard className="h-5 w-5" />
-                </div>
-                <div className="space-y-1">
-                  <h2 className="text-base font-medium">{t("route.dashboard.welcome_title")}</h2>
-                  <p className="text-sm text-fg-muted">
-                    {t("route.dashboard.empty_state")}
-                  </p>
-                </div>
-                <Button onClick={() => setCreateCardOpen(true)}>
-                  <Plus className="h-3.5 w-3.5" />
-                  {t("common.add_card")}
-                </Button>
-              </CardContent>
+              <EmptyState
+                icon={CreditCard}
+                title={t("route.dashboard.welcome_title")}
+                description={t("route.dashboard.empty_state")}
+                action={
+                  <Button onClick={() => setCreateCardOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" />
+                    {t("common.add_card")}
+                  </Button>
+                }
+              />
             </Card>
           </div>
         </div>
@@ -229,38 +247,19 @@ export function Dashboard() {
 
   return (
     <div className="pb-10">
-      <PeriodHeader subtitle={headerSubtitle}>{periodPicker}</PeriodHeader>
+      <PageHeader
+        title={t("route.dashboard.title")}
+        subtitle={headerSubtitle}
+        actions={periodPicker}
+      />
 
-      <div className="px-6 pt-4 flex items-center gap-1 flex-wrap">
-        <button
-          onClick={() => setCardFilter(null)}
-          className={cn(
-            "rounded-[var(--radius)] border px-2.5 py-1 text-xs transition-colors",
-            cardFilter === null
-              ? "border-accent bg-accent/10 text-accent"
-              : "border-border text-fg-muted hover:bg-surface-hover",
-          )}
-        >
-          {t("common.all")}
-        </button>
-        {(cards ?? []).map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setCardFilter(c.id)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1 text-xs transition-colors",
-              cardFilter === c.id
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-fg-muted hover:bg-surface-hover",
-            )}
-          >
-            <span className="h-2 w-3 rounded-sm" style={{ backgroundColor: c.color }} />
-            {c.name}
-          </button>
-        ))}
-      </div>
+      <div className="space-y-4 px-6 py-4">
+        <CardFilterChips
+          cards={cards ?? []}
+          value={cardFilter}
+          onChange={setCardFilter}
+        />
 
-      <div className="space-y-6 px-6 py-6">
         <div className="flex gap-3">
           <Stat
             label={mode === "year" ? t("stats.year_total") : t("stats.month_total")}
@@ -357,9 +356,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               {topCategories.length === 0 ? (
-                <p className="text-sm text-fg-subtle py-12 text-center">
-                  {t("dashboard.no_categorized")}
-                </p>
+                <EmptyState title={t("dashboard.no_categorized")} className="py-8" />
               ) : (
                 <div className="flex items-center gap-4">
                   <PieChart width={180} height={180}>
@@ -519,10 +516,10 @@ export function Dashboard() {
                       key={tx.id}
                       className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors"
                     >
-                      <td className="px-5 py-2.5 w-20 text-xs text-fg-muted tabular">
+                      <td className="px-5 py-2 w-20 text-xs text-fg-muted tabular">
                         {formatDate(tx.postedAt, "day")}
                       </td>
-                      <td className="py-2.5 min-w-0">
+                      <td className="py-2 min-w-0">
                         <div className="flex items-center gap-2">
                           <div className="text-sm truncate">
                             {tx.merchantClean ?? tx.description}
@@ -542,7 +539,7 @@ export function Dashboard() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 w-32">
+                      <td className="px-3 py-2 w-32">
                         {cat && (
                           <div className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[10px]">
                             <span
@@ -553,7 +550,7 @@ export function Dashboard() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 w-28 text-xs text-fg-subtle">
+                      <td className="px-3 py-2 w-28 text-xs text-fg-subtle">
                         {card && (
                           <div className="flex items-center gap-1.5">
                             <span
@@ -564,7 +561,7 @@ export function Dashboard() {
                           </div>
                         )}
                       </td>
-                      <td className="pl-3 pr-5 py-2.5 w-28 text-right tabular text-sm font-medium">
+                      <td className="pl-3 pr-5 py-2 w-28 text-right tabular text-sm font-medium">
                         {formatMoney(tx.amountCents)}
                       </td>
                     </tr>

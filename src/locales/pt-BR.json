@@ -187,13 +187,16 @@
   },
   "categories": {
     "subcategories_count_one": "{{count}} subcategoria",
-    "subcategories_count_other": "{{count}} subcategorias"
+    "subcategories_count_other": "{{count}} subcategorias",
+    "empty_title": "Nenhuma categoria ainda",
+    "empty_description": "Crie categorias para classificar seus gastos e habilitar o detalhamento do painel."
   },
   "installments_view": {
     "no_open": "Nenhuma compra parcelada em aberto.",
     "paid_format": "{{current}} de {{total}} pagas",
     "remaining": "faltam {{amount}}",
-    "per_installment": "{{count}}× de {{amount}}"
+    "per_installment": "{{count}}× de {{amount}}",
+    "empty_description": "Compras parceladas de faturas importadas aparecem aqui com o saldo restante."
   },
   "settings": {
     "current_vault": "Cofre atual",

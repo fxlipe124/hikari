@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { Layers } from "lucide-react";
 import { useTransactions, useCards } from "@/lib/queries";
 import { Card, CardContent } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { useFormatMoney } from "@/lib/utils";
 
 export function Installments() {
@@ -10,7 +14,7 @@ export function Installments() {
   // Query every transaction in the vault — installments span months by
   // design, so a single-month filter would silently miss any group that
   // doesn't happen to bill in the current statement.
-  const { data: txs } = useTransactions();
+  const { data: txs, isLoading } = useTransactions();
   const { data: cards } = useCards();
 
   const groups = useMemo(() => {
@@ -57,20 +61,22 @@ export function Installments() {
 
   return (
     <div>
-      <div className="flex items-end justify-between border-b border-border px-6 py-5">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{t("route.installments.title")}</h1>
-          <p className="mt-0.5 text-sm text-fg-muted">
-            {t("route.installments.subtitle", { count: groups.length })}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title={t("route.installments.title")}
+        subtitle={t("route.installments.subtitle", { count: groups.length })}
+      />
 
       <div className="p-6 space-y-3">
-        {groups.length === 0 && (
-          <p className="text-sm text-fg-subtle text-center py-12">
-            {t("installments_view.no_open")}
-          </p>
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full rounded-[var(--radius-lg)]" />
+          ))}
+        {!isLoading && groups.length === 0 && (
+          <EmptyState
+            icon={Layers}
+            title={t("installments_view.no_open")}
+            description={t("installments_view.empty_description")}
+          />
         )}
         {groups.map((g) => {
           const card = cards?.find((c) => c.id === g.cardId);
@@ -118,7 +124,7 @@ export function Installments() {
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-accent"
+                      className="h-full rounded-full bg-accent transition-[width]"
                       style={{ width: `${pct}%` }}
                     />
                   </div>

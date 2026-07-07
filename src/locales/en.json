@@ -187,13 +187,16 @@
   },
   "categories": {
     "subcategories_count_one": "{{count}} subcategory",
-    "subcategories_count_other": "{{count}} subcategories"
+    "subcategories_count_other": "{{count}} subcategories",
+    "empty_title": "No categories yet",
+    "empty_description": "Create categories to classify your spending and unlock the dashboard breakdown."
   },
   "installments_view": {
     "no_open": "No open installment purchases.",
     "paid_format": "{{current}} of {{total}} paid",
     "remaining": "{{amount}} remaining",
-    "per_installment": "{{count}}× of {{amount}}"
+    "per_installment": "{{count}}× of {{amount}}",
+    "empty_description": "Installment purchases from imported statements show up here with their remaining balance."
   },
   "settings": {
     "current_vault": "Current vault",

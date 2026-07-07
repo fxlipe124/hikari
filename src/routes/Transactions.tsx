@@ -6,6 +6,10 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { PeriodPicker } from "@/components/ui/PeriodPicker";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { CardFilterChips } from "@/components/CardFilterChips";
 import { TransactionDialog } from "@/components/TransactionDialog";
 import {
   countActiveFilters,
@@ -86,7 +90,7 @@ export function Transactions() {
     }
   }, [cards, cardFilter]);
   const yearStr = String(year);
-  const { data: txs } = useTransactions(
+  const { data: txs, isLoading: txsLoading } = useTransactions(
     mode === "month"
       ? { yearMonth: ym, query, cardId: cardFilter ?? undefined }
       : { year: yearStr, query, cardId: cardFilter ?? undefined },
@@ -199,9 +203,13 @@ export function Transactions() {
 
   return (
     <div>
-      <div className="border-b border-border px-6 py-5">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold tracking-tight capitalize">{t("route.transactions.title")}</h1>
+      <PageHeader
+        title={t("route.transactions.title")}
+        subtitle={t("route.transactions.summary", {
+          count: txs?.length ?? 0,
+          total: formatMoney(total),
+        })}
+        actions={
           <PeriodPicker
             mode={mode}
             ym={ym}
@@ -210,14 +218,8 @@ export function Transactions() {
             onYmChange={setYm}
             onYearChange={setYear}
           />
-        </div>
-        <p className="mt-0.5 text-sm text-fg-muted">
-          {t("route.transactions.summary", {
-            count: txs?.length ?? 0,
-            total: formatMoney(total),
-          })}
-        </p>
-      </div>
+        }
+      />
 
       <div className="px-6 py-4 border-b border-border flex items-center gap-2">
         <div className="relative flex-1 max-w-[320px]">
@@ -230,32 +232,11 @@ export function Transactions() {
           />
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCardFilter(null)}
-            className={`rounded-[var(--radius)] border px-2.5 py-1 text-xs transition-colors ${
-              cardFilter === null
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-fg-muted hover:bg-surface-hover"
-            }`}
-          >
-            {t("common.all")}
-          </button>
-          {(cards ?? []).map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setCardFilter(c.id)}
-              className={`flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1 text-xs transition-colors ${
-                cardFilter === c.id
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border text-fg-muted hover:bg-surface-hover"
-              }`}
-            >
-              <span className="h-2 w-3 rounded-sm" style={{ backgroundColor: c.color }} />
-              {c.name}
-            </button>
-          ))}
-        </div>
+        <CardFilterChips
+          cards={cards ?? []}
+          value={cardFilter}
+          onChange={setCardFilter}
+        />
 
         <div className="ml-auto">
           <Button
@@ -361,36 +342,42 @@ export function Transactions() {
           </tr>
         </thead>
         <tbody>
-          {filteredTxs.length === 0 && (
+          {txsLoading &&
+            Array.from({ length: 8 }).map((_, i) => (
+              <tr key={i} className="border-b border-border">
+                <td colSpan={6} className="px-6 py-2">
+                  <Skeleton className="h-7 w-full" />
+                </td>
+              </tr>
+            ))}
+          {!txsLoading && filteredTxs.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-6 py-16">
-                <div className="flex flex-col items-center justify-center gap-3 text-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-fg-subtle">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {query || cardFilter || activeFilterCount > 0
-                        ? t("transactions.no_match")
-                        : mode === "year"
-                          ? t("transactions.nothing_entered_year", { year })
-                          : t("transactions.nothing_entered", {
-                              month: monthLabel(ym).toLowerCase(),
-                            })}
-                    </p>
-                    <p className="text-xs text-fg-subtle mt-0.5">
-                      {query || cardFilter || activeFilterCount > 0
-                        ? t("transactions.clear_filters")
-                        : t("transactions.manual_or_import")}
-                    </p>
-                  </div>
-                  {!query && !cardFilter && activeFilterCount === 0 && (
-                    <Button size="sm" onClick={() => setCreating(true)}>
-                      <Plus className="h-3.5 w-3.5" />
-                      {t("common.new_transaction")}
-                    </Button>
-                  )}
-                </div>
+              <td colSpan={6} className="px-6 py-4">
+                <EmptyState
+                  icon={FileText}
+                  title={
+                    query || cardFilter || activeFilterCount > 0
+                      ? t("transactions.no_match")
+                      : mode === "year"
+                        ? t("transactions.nothing_entered_year", { year })
+                        : t("transactions.nothing_entered", {
+                            month: monthLabel(ym).toLowerCase(),
+                          })
+                  }
+                  description={
+                    query || cardFilter || activeFilterCount > 0
+                      ? t("transactions.clear_filters")
+                      : t("transactions.manual_or_import")
+                  }
+                  action={
+                    !query && !cardFilter && activeFilterCount === 0 ? (
+                      <Button size="sm" onClick={() => setCreating(true)}>
+                        <Plus className="h-3.5 w-3.5" />
+                        {t("common.new_transaction")}
+                      </Button>
+                    ) : undefined
+                  }
+                />
               </td>
             </tr>
           )}
@@ -401,9 +388,20 @@ export function Transactions() {
             return (
               <tr
                 key={tx.id}
+                tabIndex={0}
                 onClick={() => setEditing(tx)}
+                onKeyDown={(e) => {
+                  // Rows are keyboard-reachable: Enter/Space opens the edit
+                  // dialog, same as click. Space would also scroll the page,
+                  // hence the preventDefault.
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setEditing(tx);
+                  }
+                }}
                 className={cn(
                   "border-b border-border transition-colors cursor-pointer",
+                  "focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2",
                   isSelected ? "bg-accent/5" : "hover:bg-surface-hover",
                 )}
               >
