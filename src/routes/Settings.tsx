@@ -16,8 +16,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { useVaultStore } from "@/hooks/useVaultStore";
 import { loadConfig, setAutolockMinutes } from "@/lib/config";
-import { ipc, isTauri } from "@/lib/ipc";
-import { toast } from "@/lib/toast";
+import { backupNowInteractive } from "@/lib/backup";
 import { exportCsvInteractive } from "@/lib/csvExport";
 import { cn } from "@/lib/utils";
 
@@ -53,29 +52,23 @@ export function Settings() {
     qc.invalidateQueries({ queryKey: ["app-config"] });
   }
 
+  // Both flows live in lib/ (backup.ts, csvExport.ts) so the command
+  // palette triggers the exact same behavior. Busy state flips via
+  // onStart — after guards and pickers — so the buttons only read as
+  // busy while real work is running, same as the pre-extraction code.
   async function manualBackup() {
-    if (!isTauri) {
-      toast.error(t("error.backup_native_only"));
-      return;
-    }
-    setBusy("backup");
     try {
-      const path = await ipc.backup.now();
-      const fileName = path.split(/[\\/]/).pop() ?? path;
-      toast.success(t("toast.backup_created"), fileName);
-    } catch (e) {
-      toast.fromError(e, t("error.backup_failed"));
+      await backupNowInteractive({ onStart: () => setBusy("backup") });
     } finally {
       setBusy(null);
     }
   }
 
   async function exportCsv(scope: "month" | "all") {
-    // Shared flow (picker → IPC → toast) lives in lib/csvExport so the
-    // command palette triggers the exact same behavior.
-    setBusy(scope === "month" ? "csv-month" : "csv-all");
     try {
-      await exportCsvInteractive(scope);
+      await exportCsvInteractive(scope, {
+        onStart: () => setBusy(scope === "month" ? "csv-month" : "csv-all"),
+      });
     } finally {
       setBusy(null);
     }

@@ -23,8 +23,8 @@ import { Kbd } from "@/components/ui/Kbd";
 import { useTheme } from "@/hooks/useTheme";
 import { useVaultStore } from "@/hooks/useVaultStore";
 import { useViewMonthStore } from "@/hooks/useViewMonthStore";
-import { ipc, isTauri } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
+import { backupNowInteractive } from "@/lib/backup";
 import { exportCsvInteractive } from "@/lib/csvExport";
 import { isSupportedLocale, SUPPORTED_LOCALES } from "@/lib/i18n";
 import { setStoredLocale } from "@/lib/config";
@@ -51,7 +51,7 @@ function norm(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 export function CommandPalette({
@@ -78,6 +78,13 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  // Chromium re-dispatches a synthetic mousemove (same coordinates) at the
+  // element under a stationary cursor after any scroll. Without filtering
+  // it, arrowing past the fold scrolls the list, the synthetic event fires
+  // on whatever row slid under the pointer, and the selection snaps back —
+  // keyboard navigation gets trapped at the cursor. Only pointer events
+  // whose coordinates actually changed count as intent.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
   const groups = useMemo<PaletteGroup[]>(() => {
     const navigation: PaletteAction[] = ALL_NAV.map((item) => ({
@@ -105,19 +112,7 @@ export function CommandPalette({
         id: "backup-now",
         label: t("common.backup_now"),
         icon: Database,
-        run: async () => {
-          if (!isTauri) {
-            toast.error(t("error.backup_native_only"));
-            return;
-          }
-          try {
-            const path = await ipc.backup.now();
-            const fileName = path.split(/[\\/]/).pop() ?? path;
-            toast.success(t("toast.backup_created"), fileName);
-          } catch (e) {
-            toast.fromError(e, t("error.backup_failed"));
-          }
-        },
+        run: () => void backupNowInteractive(),
       },
       {
         id: "export-csv-month",
@@ -254,6 +249,9 @@ export function CommandPalette({
   }
 
   function onInputKeyDown(e: React.KeyboardEvent) {
+    // IME composition: Enter commits the composed text and arrows move the
+    // candidate selection — neither should drive the palette.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((i) => (flat.length === 0 ? 0 : (i + 1) % flat.length));
@@ -277,6 +275,7 @@ export function CommandPalette({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out" />
         <DialogPrimitive.Content
+          aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-[16vh] z-50 w-full max-w-[560px] -translate-x-1/2",
             "overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface shadow-lg",
@@ -299,6 +298,7 @@ export function CommandPalette({
               className="h-11 w-full bg-transparent text-sm text-fg placeholder:text-fg-subtle focus-visible:outline-none"
               role="combobox"
               aria-expanded="true"
+              aria-autocomplete="list"
               aria-controls="palette-list"
               aria-activedescendant={activeId ? `palette-item-${activeId}` : undefined}
               autoCorrect="off"
@@ -306,20 +306,27 @@ export function CommandPalette({
               spellCheck={false}
             />
           </div>
-          <div
-            id="palette-list"
-            role="listbox"
-            ref={listRef}
-            className="max-h-[340px] overflow-y-auto p-1.5"
-          >
+          <div ref={listRef} className="max-h-[340px] overflow-y-auto p-1.5">
             {flat.length === 0 && (
               <p className="px-2.5 py-8 text-center text-sm text-fg-subtle">
                 {t("palette.no_results")}
               </p>
             )}
-            {filtered.map((group) => (
-              <div key={group.label}>
-                <div className="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+            {/* The listbox holds only role=group containers of options —
+                the no-results paragraph lives outside it so screen readers
+                don't enumerate stray text as list entries. */}
+            <div id="palette-list" role="listbox">
+            {filtered.map((group, gi) => (
+              <div
+                key={group.label}
+                role="group"
+                aria-labelledby={`palette-group-${gi}`}
+              >
+                <div
+                  id={`palette-group-${gi}`}
+                  role="presentation"
+                  className="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-subtle"
+                >
                   {group.label}
                 </div>
                 {group.actions.map((action) => {
@@ -332,7 +339,14 @@ export function CommandPalette({
                       role="option"
                       aria-selected={index === activeIndex}
                       tabIndex={-1}
-                      onMouseEnter={() => setActiveIndex(index)}
+                      onMouseMove={(e) => {
+                        const last = lastPointer.current;
+                        lastPointer.current = { x: e.clientX, y: e.clientY };
+                        // Same coordinates = the post-scroll synthetic event,
+                        // not the user's hand.
+                        if (last && last.x === e.clientX && last.y === e.clientY) return;
+                        if (index !== activeIndex) setActiveIndex(index);
+                      }}
                       onClick={() => runAction(action)}
                       className={cn(
                         "flex h-9 w-full items-center gap-2.5 rounded-[var(--radius)] px-2.5 text-left text-sm",
@@ -358,6 +372,7 @@ export function CommandPalette({
                 })}
               </div>
             ))}
+            </div>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
