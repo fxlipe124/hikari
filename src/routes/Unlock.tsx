@@ -170,8 +170,9 @@ export function Unlock() {
                       </button>
                       <button
                         onClick={() => forgetRecent(r.path)}
-                        className="opacity-0 group-hover:opacity-100 text-fg-subtle hover:text-fg transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-fg-subtle hover:text-fg transition-opacity"
                         title={t("common.forget")}
+                        aria-label={t("common.forget")}
                       >
                         <XIcon className="h-3.5 w-3.5" />
                       </button>
@@ -219,6 +220,8 @@ export function Unlock() {
               <button
                 type="button"
                 onClick={back}
+                aria-label={t("common.cancel")}
+                title={t("common.cancel")}
                 className={cn(
                   "rounded-[var(--radius)] p-1 text-fg-subtle hover:text-fg hover:bg-surface-hover",
                   "transition-colors"

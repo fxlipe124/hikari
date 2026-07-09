@@ -208,12 +208,14 @@ export function ImportPreview() {
         <div className="flex items-center gap-3">
           <button
             onClick={cancel}
+            aria-label={t("common.cancel")}
+            title={t("common.cancel")}
             className="rounded-[var(--radius)] p-1 text-fg-subtle hover:text-fg hover:bg-surface-hover transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">{t("route.import_preview.title")}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{t("route.import_preview.title")}</h1>
             <p className="text-xs text-fg-muted">
               {issuer && (
                 <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-accent text-[10px]">

@@ -97,8 +97,9 @@ export function Categories() {
                       newChild(root.id);
                     }
                   }}
-                  className="ml-auto opacity-0 group-hover/root:opacity-100 text-fg-subtle hover:text-fg transition-opacity text-xs cursor-pointer"
+                  className="ml-auto opacity-0 group-hover/root:opacity-100 focus-visible:opacity-100 text-fg-subtle hover:text-fg transition-opacity text-xs cursor-pointer"
                   title={t("common.new_subcategory")}
+                  aria-label={t("common.new_subcategory")}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </span>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Lock, Plus, Search } from "lucide-react";
+import { Lock, Plus, Search, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Kbd } from "@/components/ui/Kbd";
@@ -61,8 +61,10 @@ function VaultIndicator() {
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 text-xs">
+      {/* ShieldCheck = "this vault is protected" identity; the Lock on the
+          right is the act-now button. Two different icons, two meanings. */}
       <div className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-accent/15 text-accent">
-        <Lock className="h-3.5 w-3.5" />
+        <ShieldCheck className="h-3.5 w-3.5" />
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         <span className="truncate font-medium text-fg">{label}</span>
@@ -72,6 +74,7 @@ function VaultIndicator() {
         onClick={lock}
         className="text-fg-subtle hover:text-fg transition-colors"
         title={t("common.lock_vault")}
+        aria-label={t("common.lock_vault")}
       >
         <Lock className="h-3.5 w-3.5" />
       </button>
