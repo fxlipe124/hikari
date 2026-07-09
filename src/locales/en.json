@@ -494,5 +494,18 @@
     "backup_failed": "Failed to create backup",
     "export_native_only": "Export only works in the native app.",
     "csv_export_failed": "Failed to export CSV"
+  },
+  "palette": {
+    "title": "Command palette",
+    "trigger": "Search or run a command…",
+    "placeholder": "Type a command or search…",
+    "no_results": "No matching commands.",
+    "group_navigation": "Navigation",
+    "group_actions": "Actions",
+    "group_view": "View",
+    "group_preferences": "Preferences",
+    "go_current_month": "Go to current month",
+    "switch_year_view": "Switch to year view",
+    "switch_month_view": "Switch to month view"
   }
 }

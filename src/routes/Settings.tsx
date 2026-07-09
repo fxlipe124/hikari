@@ -18,8 +18,8 @@ import { useVaultStore } from "@/hooks/useVaultStore";
 import { loadConfig, setAutolockMinutes } from "@/lib/config";
 import { ipc, isTauri } from "@/lib/ipc";
 import { toast } from "@/lib/toast";
-import { pickCsvToSave } from "@/lib/dialogs";
-import { cn, currentYearMonth, monthLabel } from "@/lib/utils";
+import { exportCsvInteractive } from "@/lib/csvExport";
+import { cn } from "@/lib/utils";
 
 const AUTOLOCK_OPTIONS: Array<{ minutes: number; key: string }> = [
   { minutes: 1, key: "settings.autolock_1m" },
@@ -71,27 +71,11 @@ export function Settings() {
   }
 
   async function exportCsv(scope: "month" | "all") {
-    if (!isTauri) {
-      toast.error(t("error.export_native_only"));
-      return;
-    }
-    const ym = scope === "month" ? currentYearMonth() : undefined;
-    const suggested =
-      scope === "month" ? `transactions-${ym}.csv` : "transactions-all.csv";
-    const dest = await pickCsvToSave(suggested);
-    if (!dest) return;
-
+    // Shared flow (picker → IPC → toast) lives in lib/csvExport so the
+    // command palette triggers the exact same behavior.
     setBusy(scope === "month" ? "csv-month" : "csv-all");
     try {
-      const count = await ipc.export.csv(dest, ym);
-      toast.success(
-        t("toast.csv_exported", { count }),
-        scope === "month"
-          ? t("toast.csv_export_month_desc", { month: monthLabel(ym!) })
-          : t("toast.csv_export_all_desc")
-      );
-    } catch (e) {
-      toast.fromError(e, t("error.csv_export_failed"));
+      await exportCsvInteractive(scope);
     } finally {
       setBusy(null);
     }

@@ -494,5 +494,18 @@
     "backup_failed": "Falha ao criar backup",
     "export_native_only": "Export só funciona no app nativo.",
     "csv_export_failed": "Falha ao exportar CSV"
+  },
+  "palette": {
+    "title": "Paleta de comandos",
+    "trigger": "Buscar ou executar um comando…",
+    "placeholder": "Digite um comando ou busque…",
+    "no_results": "Nenhum comando encontrado.",
+    "group_navigation": "Navegação",
+    "group_actions": "Ações",
+    "group_view": "Visualização",
+    "group_preferences": "Preferências",
+    "go_current_month": "Ir para o mês atual",
+    "switch_year_view": "Mudar para visão anual",
+    "switch_month_view": "Mudar para visão mensal"
   }
 }

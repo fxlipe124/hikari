@@ -1,29 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Receipt,
-  CreditCard,
-  FolderTree,
-  Layers,
-  Settings as SettingsIcon,
-  Lock,
-  Plus,
-} from "lucide-react";
+import { Lock, Plus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
+import { Kbd } from "@/components/ui/Kbd";
 import { useVaultStore } from "@/hooks/useVaultStore";
+import { NAV, SETTINGS_NAV, ALL_NAV } from "@/lib/nav";
 import { ImportDialog } from "@/components/ImportDialog";
 import { TransactionDialog } from "@/components/TransactionDialog";
+import { CommandPalette } from "@/components/CommandPalette";
 
-const NAV = [
-  { to: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, shortcut: "G D", key: "d" },
-  { to: "/transactions", labelKey: "nav.transactions", icon: Receipt, shortcut: "G T", key: "t" },
-  { to: "/installments", labelKey: "nav.installments", icon: Layers, shortcut: "G P", key: "p" },
-  { to: "/cards", labelKey: "nav.cards", icon: CreditCard, shortcut: "G C", key: "c" },
-  { to: "/categories", labelKey: "nav.categories", icon: FolderTree, shortcut: "G A", key: "a" },
-] as const;
+const isMac =
+  typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
 // Vim-style "g <key>" jumps. We arm on a bare "g" and resolve the next key
 // within a short window. Bail if the user is typing into an input/textarea
@@ -51,7 +40,7 @@ function useGoToShortcuts() {
         return;
       }
       if (armedAt.current && now - armedAt.current < 1500) {
-        const match = NAV.find((n) => n.key === e.key.toLowerCase());
+        const match = ALL_NAV.find((n) => n.key === e.key.toLowerCase());
         if (match) {
           e.preventDefault();
           navigate(match.to);
@@ -94,7 +83,21 @@ export function AppShell() {
   const { t } = useTranslation();
   const [importOpen, setImportOpen] = useState(false);
   const [txOpen, setTxOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   useGoToShortcuts();
+
+  // Ctrl+K / Cmd+K toggles the command palette from anywhere, including
+  // text fields — the modifier makes the intent unambiguous.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-fg">
       <aside className="flex w-56 flex-col border-r border-border bg-surface">
@@ -132,28 +135,38 @@ export function AppShell() {
 
         <div className="border-t border-border p-2">
           <NavLink
-            to="/settings"
+            to={SETTINGS_NAV.to}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-2.5 rounded-[var(--radius)] px-2.5 py-1.5 text-sm transition-colors",
+                "group flex items-center gap-2.5 rounded-[var(--radius)] px-2.5 py-1.5 text-sm transition-colors",
                 isActive
                   ? "bg-surface-hover text-fg font-medium"
                   : "text-fg-muted hover:bg-surface-hover hover:text-fg"
               )
             }
           >
-            <SettingsIcon className="h-4 w-4" />
-            <span>{t("nav.settings")}</span>
+            <SETTINGS_NAV.icon className="h-4 w-4" />
+            <span className="flex-1">{t(SETTINGS_NAV.labelKey)}</span>
+            <span className="hidden text-[10px] text-fg-subtle tabular group-hover:inline">
+              {SETTINGS_NAV.shortcut}
+            </span>
           </NavLink>
         </div>
       </aside>
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-12 items-center justify-between gap-3 border-b border-border bg-surface px-4">
-          {/* TODO v0.2: Cmd+K command palette (M5). Search button removed
-              for v0.1.0 since the handler isn't wired yet. */}
-          <div className="flex items-center gap-2 text-fg-muted" />
-
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="flex h-7 w-64 items-center gap-2 rounded-[var(--radius)] border border-border bg-bg px-2.5 text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-fg-muted"
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left">{t("palette.trigger")}</span>
+            <span className="flex gap-1">
+              <Kbd>{isMac ? "⌘" : "Ctrl"}</Kbd>
+              <Kbd>K</Kbd>
+            </span>
+          </button>
 
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
@@ -173,6 +186,12 @@ export function AppShell() {
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
       <TransactionDialog open={txOpen} onOpenChange={setTxOpen} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onNewTransaction={() => setTxOpen(true)}
+        onImport={() => setImportOpen(true)}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { create } from "zustand";
 
 type Theme = "dark" | "light" | "system";
 
@@ -15,12 +16,26 @@ function applyTheme(theme: Theme) {
   root.classList.toggle("dark", resolved === "dark");
 }
 
-export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "dark";
-    return (localStorage.getItem(STORAGE_KEY) as Theme) || "dark";
-  });
+// Zustand instead of per-hook useState so every consumer (Settings, the
+// command palette, App) sees the same value live — with local state, a
+// theme change from the palette wouldn't refresh an already-mounted
+// Settings screen.
+const useThemeStore = create<{ theme: Theme; setTheme: (t: Theme) => void }>(
+  (set) => ({
+    theme:
+      typeof window === "undefined"
+        ? "dark"
+        : ((localStorage.getItem(STORAGE_KEY) as Theme) || "dark"),
+    setTheme: (theme) => set({ theme }),
+  })
+);
 
+export function useTheme() {
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  // Effects run once per consumer, but applyTheme/localStorage writes are
+  // idempotent — same behavior as the previous per-hook implementation.
   useEffect(() => {
     applyTheme(theme);
     localStorage.setItem(STORAGE_KEY, theme);
@@ -34,5 +49,5 @@ export function useTheme() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
-  return { theme, setTheme: setThemeState };
+  return { theme, setTheme };
 }
