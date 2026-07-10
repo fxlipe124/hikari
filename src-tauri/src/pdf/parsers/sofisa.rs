@@ -503,7 +503,6 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
                 if phase == 2 {
                     emit_visa_band(&band, current_last4.as_deref(), &mut out);
                     band = VisaBand::default();
-                    phase = 0;
                 }
                 phase = 1;
                 band.descs.push(line.to_string());
