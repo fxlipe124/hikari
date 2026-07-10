@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type DragEvent } from "react";
+import { useState, useCallback, useEffect, useRef, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ClipboardPaste, FileUp, Sparkles, X } from "lucide-react";
@@ -147,6 +147,19 @@ export function ImportDialog({
     setReferenceYearMonth(ym);
     setPeriodAutoFilled(true); // user touched it → never auto-snap again
   };
+
+  // With exactly one card in the vault there's nothing to choose — default
+  // to it (and snap the period to its statement, same as a manual pick) so
+  // the user isn't forced to click the only option. Mirrors the auto-default
+  // on the Dashboard / Transactions card filters. Re-running is guarded by
+  // the cardId === null check, so it fires once per import session (reset()
+  // clears cardId when the dialog is reused).
+  useEffect(() => {
+    if (cardId === null && cards && cards.length === 1) {
+      onCardPick(cards[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, cardId]);
 
   const canSubmit =
     !!cardId && (mode === "paste" ? pasted.trim().length > 20 : pdfFiles.length > 0);
