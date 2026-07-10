@@ -47,6 +47,13 @@ pub struct ParsedTransaction {
     /// Parsers without that concept always set this to `false`.
     #[serde(default)]
     pub is_virtual_card: bool,
+    /// Last 4 digits of the card this row was printed under, when the
+    /// statement groups transactions by card (Sofisa lists several cards on
+    /// one fatura). Lets the import flow route each row to the matching
+    /// registered card instead of dumping the whole statement on one.
+    /// `None` for parsers/layouts without per-card sections.
+    #[serde(default)]
+    pub last4: Option<String>,
     /// Suggested category (filled by auto-categorization rules, never by parsers).
     #[serde(default)]
     pub category_id: Option<String>,

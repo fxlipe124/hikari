@@ -141,6 +141,11 @@ fn parse_classic(
     // When the next page's "(continuação)" marker appears, we restore it
     // so that transactions resuming without a fresh header still parse.
     let mut last_active_section = Section::None;
+    // Last4 of the card whose section we're currently in — the expense
+    // headers ("Despesas Cartão - 1234") carry it, so rows can be routed
+    // to the matching registered card (e.g. an "Adicional" card with a
+    // different number listed on the same fatura).
+    let mut current_last4: Option<String> = None;
 
     for raw_line in text.lines() {
         let line = raw_line.trim();
@@ -155,14 +160,16 @@ fn parse_classic(
             last_active_section = section;
             continue;
         }
-        if EXPENSE_VIRTUAL_HEADER.is_match(line) {
+        if let Some(c) = EXPENSE_VIRTUAL_HEADER.captures(line) {
             section = Section::ExpenseVirtual;
             last_active_section = section;
+            current_last4 = c.get(1).map(|m| m.as_str().to_string());
             continue;
         }
-        if EXPENSE_HEADER.is_match(line) {
+        if let Some(c) = EXPENSE_HEADER.captures(line) {
             section = Section::Expense;
             last_active_section = section;
+            current_last4 = c.get(1).map(|m| m.as_str().to_string());
             continue;
         }
         if COLUMN_HEADER.is_match(line) {
@@ -274,6 +281,7 @@ fn parse_classic(
             installment,
             is_refund,
             is_virtual_card: section == Section::ExpenseVirtual,
+            last4: current_last4.clone(),
             category_id: None,
             raw: line.to_string(),
         });
@@ -362,9 +370,10 @@ fn clean_merchant(desc: &str) -> Option<String> {
 // (`4563**.******.0656`) and the "Compra a Vista" transaction-type prefix,
 // neither of which the Mastercard template ever prints.
 
-/// Masked card number, e.g. `4563**.******.0656` — BIN, masked middle, last4.
+/// Masked card number, e.g. `4563**.******.0656` — BIN, masked middle, and a
+/// captured last4 group.
 static VISA_CARD_NUMBER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d{4}\*\*\.\*{6}\.\d{4}").unwrap());
+    Lazy::new(|| Regex::new(r"\d{4}\*\*\.\*{6}\.(\d{4})").unwrap());
 
 /// A lone Real amount cell: "98,49", " 8,26", "1.872,68", "- 8,27".
 static VISA_AMOUNT: Lazy<Regex> =
@@ -453,6 +462,9 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
     // always dates+ descs+ amounts+ in that order, so a Date after we've
     // started descs/amounts marks the next band.
     let mut phase = 0u8;
+    // Last4 of the card block we're inside, stamped on every row so the
+    // import flow can route each to its matching registered card.
+    let mut current_last4: Option<String> = None;
 
     for (i, raw) in lines.iter().enumerate() {
         let line = raw.trim();
@@ -462,10 +474,12 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
 
         // Card boundary: the masked card number is a delimiter, and the
         // cardholder-name line printed right before it is too. Flush the
-        // in-flight band so rows never straddle two cards.
-        if VISA_CARD_NUMBER.is_match(line) {
-            emit_visa_band(&band, &mut out);
+        // in-flight band so rows never straddle two cards, then switch to
+        // the new card's last4.
+        if let Some(c) = VISA_CARD_NUMBER.captures(line) {
+            emit_visa_band(&band, current_last4.as_deref(), &mut out);
             band = VisaBand::default();
+            current_last4 = c.get(1).map(|m| m.as_str().to_string());
             phase = 0;
             continue;
         }
@@ -500,14 +514,14 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
             }
         }
     }
-    emit_visa_band(&band, &mut out);
+    emit_visa_band(&band, current_last4.as_deref(), &mut out);
     Ok(out)
 }
 
 /// Zip a band's parallel runs into transactions. Extra amounts beyond the
 /// description count (e.g. the invoice total that lands in the last band's
 /// amount run) are ignored because we only take `min(len)` rows.
-fn emit_visa_band(band: &VisaBand, out: &mut Vec<ParsedTransaction>) {
+fn emit_visa_band(band: &VisaBand, last4: Option<&str>, out: &mut Vec<ParsedTransaction>) {
     let n = band.dates.len().min(band.descs.len()).min(band.amounts.len());
     for i in 0..n {
         let date_raw = &band.dates[i];
@@ -552,6 +566,7 @@ fn emit_visa_band(band: &VisaBand, out: &mut Vec<ParsedTransaction>) {
             installment,
             is_refund: false,
             is_virtual_card: false,
+            last4: last4.map(|s| s.to_string()),
             category_id: None,
             raw: format!("{date_raw}  {desc_raw}  {amount_raw}"),
         });
@@ -1002,12 +1017,23 @@ Demais encargos que poder\u{E3}o ser cobrados:\n";
             "the Pix bill payment must be excluded",
         );
 
-        // First row: STEAM installment 2/3, R$ 8,26, dated with the 2-digit year.
+        // First row: STEAM installment 2/3, R$ 8,26, dated with the 2-digit
+        // year, tagged with the first card's last4.
         assert_eq!(txs[0].description, "STEAM");
         assert_eq!(txs[0].amount_cents, 826);
         assert_eq!(txs[0].installment, Some((2, 3)));
         assert_eq!(txs[0].posted_at, "2025-12-05");
+        assert_eq!(txs[0].last4.as_deref(), Some("0656"));
         assert!(!txs[0].is_refund);
+
+        // The three cards-0656 rows carry 0656; everything after the second
+        // card block carries 1395.
+        assert_eq!(txs[2].last4.as_deref(), Some("0656"));
+        assert_eq!(txs[3].last4.as_deref(), Some("1395"));
+        assert!(
+            txs[3..].iter().all(|t| t.last4.as_deref() == Some("1395")),
+            "every row after the second card header must be tagged 1395",
+        );
 
         // "Compra a Vista" prefix stripped; double spaces collapsed.
         assert_eq!(txs[1].description, "IFD*LPX COMERCIO DE AL");

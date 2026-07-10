@@ -99,6 +99,7 @@ fn parse_line(
         installment,
         is_refund,
         is_virtual_card: false,
+        last4: None,
         category_id: None,
         raw: caps.get(0)?.as_str().to_string(),
     })

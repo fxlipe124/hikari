@@ -287,6 +287,12 @@ pub struct ImportRow {
     pub is_refund: bool,
     #[serde(default)]
     pub is_virtual_card: bool,
+    /// Per-row card override. The frontend resolves the row's parsed last4
+    /// to a registered card and sets this so a multi-card statement routes
+    /// each row to its own card. `None` falls back to the `card_id` the
+    /// import was launched with (single-card statements, unmatched last4).
+    #[serde(default)]
+    pub card_id: Option<String>,
     /// Frontend-computed statement period for this row. None falls back
     /// to the card's nominal closing_day inside `import_commit` so that
     /// non-Sofisa imports (where the parser has no header to read) still
@@ -422,6 +428,11 @@ pub fn import_commit(
                 skipped += 1;
                 continue;
             }
+            // Route this row to its own card when the parser tagged one
+            // (multi-card statement); otherwise the card the import was
+            // launched with. Everything below — installment grouping,
+            // statement-period fallback, the insert — keys off this.
+            let row_card = row.card_id.clone().unwrap_or_else(|| card_id.clone());
             let id = format!("tx-{}", uuid::Uuid::new_v4());
             let currency = row.currency.unwrap_or_else(|| "BRL".into());
             // Tag installment rows with a group_id so the Installments page
@@ -444,7 +455,7 @@ pub fn import_commit(
                            )
                          LIMIT 1",
                         rusqlite::params![
-                            card_id,
+                            row_card,
                             row.installment_total,
                             row.description,
                             row.merchant_clean,
@@ -477,7 +488,7 @@ pub fn import_commit(
                 None => tx
                     .query_row(
                         "SELECT closing_day FROM cards WHERE id = ?",
-                        [&card_id],
+                        [&row_card],
                         |r| r.get::<_, i64>(0),
                     )
                     .ok()
@@ -490,7 +501,7 @@ pub fn import_commit(
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rusqlite::params![
                     id,
-                    card_id,
+                    row_card,
                     row.posted_at,
                     row.description,
                     row.merchant_clean,

@@ -117,6 +117,9 @@ export interface ParsedTransaction {
   installment: [number, number] | null;
   isRefund: boolean;
   isVirtualCard: boolean;
+  /** Last 4 of the card this row was printed under, when the statement
+   *  groups by card (Sofisa lists several on one fatura). Null otherwise. */
+  last4: string | null;
   categoryId: string | null;
   raw: string;
 }
@@ -144,6 +147,12 @@ export interface ImportRow {
   installmentTotal: number | null;
   isRefund: boolean;
   isVirtualCard: boolean;
+  /**
+   * Per-row card override, resolved from the row's parsed last4 during
+   * ImportPreview commit. Routes each row of a multi-card statement to its
+   * own card. Omitted → backend uses the card the import was launched with.
+   */
+  cardId?: string;
   /**
    * Pre-computed statement period (YYYY-MM) for this row. The frontend
    * computes it during ImportPreview commit using the closing_day from

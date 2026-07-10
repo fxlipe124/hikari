@@ -9,7 +9,13 @@ import { useCards, useCategories } from "@/lib/queries";
 import { useUndoableImportCommit, useUpdateCard } from "@/lib/mutations";
 import { useImportStore } from "@/hooks/useImportStore";
 import { useCurrencyStore } from "@/hooks/useCurrencyStore";
-import { errorMessage, isTauri, type ImportRow } from "@/lib/ipc";
+import {
+  errorMessage,
+  isTauri,
+  type Card,
+  type ImportRow,
+  type ParsedTransaction,
+} from "@/lib/ipc";
 import { toast } from "@/lib/toast";
 import {
   cn,
@@ -95,6 +101,19 @@ export function ImportPreview() {
   }, [categories, t]);
 
   const card = cards?.find((c) => c.id === cardId);
+  // A statement can list several cards (Sofisa lists each on one fatura).
+  // Every parsed row carries the last4 of the card it was printed under, so
+  // resolve that to a registered card and route the row there. Falls back to
+  // the card the import was launched with when the row has no last4 or none
+  // matches a registered card.
+  const cardForRow = (r: ParsedTransaction): Card | null =>
+    (r.last4 ? cards?.find((c) => c.last4 === r.last4) : undefined) ?? card ?? null;
+  // How many distinct registered cards the included rows actually resolve to
+  // — drives whether the per-row card column is worth showing.
+  const distinctCards = new Set(
+    rows.filter((_, i) => included[i]).map((r) => cardForRow(r)?.id ?? cardId),
+  );
+  const showCardColumn = distinctCards.size > 1;
   const includedCount = included.filter(Boolean).length;
   const includedTotal = rows.reduce(
     (s, r, i) => (included[i] && !r.isRefund ? s + r.amountCents : s),
@@ -130,8 +149,6 @@ export function ImportPreview() {
       //      mode where the parser couldn't see a header.
       //   3. nothing (backend then computes via card.closing_day on
       //      insert).
-      const fallbackClosingDay =
-        cardMetadata?.closingDay ?? card?.closingDay ?? null;
       const fallbackStmt = cardMetadata?.statementYearMonth ?? null;
       const payload: ImportRow[] = rows
         .map((r, i) => ({ r, i }))
@@ -140,10 +157,15 @@ export function ImportPreview() {
           const postedAt =
             r.postedAt.length === 10 ? `${r.postedAt}T00:00:00Z` : r.postedAt;
           const rowMeta = rowMetadata[i] ?? null;
+          // Resolve which registered card this row belongs to (multi-card
+          // statement) and pin its statement period against *that* card's
+          // closing day.
+          const resolvedCard = cardForRow(r);
+          const rowClosingDay =
+            rowMeta?.closingDay ?? cardMetadata?.closingDay ?? resolvedCard?.closingDay ?? null;
           // Parser-detected period (per row in batch imports, otherwise
           // the import-wide one). Wins outright when present.
           const parsedStmt = rowMeta?.statementYearMonth ?? fallbackStmt;
-          const rowClosingDay = rowMeta?.closingDay ?? fallbackClosingDay;
           const statementYearMonth =
             parsedStmt ??
             (rowClosingDay !== null
@@ -157,6 +179,9 @@ export function ImportPreview() {
             // Mirror the manual-entry path (TransactionDialog) — store the
             // user's active currency, not the parser's hardcoded "BRL".
             currency,
+            // Route to the row's own card; omitted when it resolves to the
+            // launched card so the backend just uses its default.
+            cardId: resolvedCard && resolvedCard.id !== cardId ? resolvedCard.id : undefined,
             categoryId: r.categoryId,
             installmentIndex: r.installment ? r.installment[0] : null,
             installmentTotal: r.installment ? r.installment[1] : null,
@@ -329,6 +354,9 @@ export function ImportPreview() {
             <tr className="text-xs text-fg-muted">
               <th className="pl-6 pr-2 py-2 w-8" />
               <th className="px-2 py-2 text-left font-medium w-24">{t("table.header.date")}</th>
+              {showCardColumn && (
+                <th className="px-2 py-2 text-left font-medium w-28">{t("table.header.card")}</th>
+              )}
               <th className="px-2 py-2 text-left font-medium">{t("table.header.description")}</th>
               <th className="px-2 py-2 text-left font-medium w-44">{t("table.header.category")}</th>
               <th className="px-2 py-2 text-left font-medium w-28">{t("table.header.installment")}</th>
@@ -373,6 +401,28 @@ export function ImportPreview() {
                       disabled={!on}
                     />
                   </td>
+                  {showCardColumn && (
+                    <td className="px-2 py-1.5">
+                      {(() => {
+                        const rc = cardForRow(r);
+                        return rc ? (
+                          <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+                            <span
+                              className="h-2 w-3 shrink-0 rounded-sm"
+                              style={{ backgroundColor: rc.color }}
+                            />
+                            <span className="truncate">
+                              {rc.last4 ? `•••• ${rc.last4}` : rc.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-fg-subtle">
+                            {t("common.empty_dash")}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <Input
