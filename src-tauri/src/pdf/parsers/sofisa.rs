@@ -6,7 +6,22 @@ use crate::pdf::parsers::{generic, CardMetadata, ParsedTransaction};
 
 /// Sofisa Direto invoice layout — priority parser.
 ///
-/// Observed structure of a real fatura:
+/// Sofisa ships at least two visibly different PDF templates. `parse`
+/// detects which one it's looking at and dispatches to `parse_classic`
+/// (Mastercard-style, documented below) or `parse_visa` (Visa-style, see
+/// its own doc comment further down).
+pub fn parse(
+    text: &str,
+    statement_year_month: Option<&str>,
+    closing_day: Option<u32>,
+) -> AppResult<Vec<ParsedTransaction>> {
+    if is_visa_layout(text) {
+        return parse_visa(text);
+    }
+    parse_classic(text, statement_year_month, closing_day)
+}
+
+/// Observed structure of a real fatura (Mastercard-style template):
 ///
 /// ```text
 /// Detalhamento da Fatura
@@ -105,7 +120,7 @@ enum Section {
     Refund,
 }
 
-pub fn parse(
+fn parse_classic(
     text: &str,
     statement_year_month: Option<&str>,
     _closing_day: Option<u32>,
@@ -320,6 +335,256 @@ fn clean_merchant(desc: &str) -> Option<String> {
         return None;
     }
     Some(s.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Visa-card template
+// ---------------------------------------------------------------------------
+//
+// Sofisa's Visa statement is a different animal from the classic Mastercard
+// one. `pdf-extract` reads it column-by-column, so a printed table row is
+// scattered across the text stream as three separate runs: first every date
+// in the band, then every description, then every Real amount. Example of
+// one band as it arrives:
+//
+// ```text
+// 05/01/26
+// 05/01/26
+// Compra a Vista IFD*LPX COMERCIO DE AL
+// Compra a Vista SHEIN  *JIANGHUA CHEN
+// 98,49
+// 166,89
+// ```
+//
+// which is really two rows: (05/01/26, LPX…, 98,49) and (05/01/26, SHEIN…,
+// 166,89). We reassemble by collecting the runs and zipping them by index.
+// Distinct fingerprints vs the classic layout: the masked card number
+// (`4563**.******.0656`) and the "Compra a Vista" transaction-type prefix,
+// neither of which the Mastercard template ever prints.
+
+/// Masked card number, e.g. `4563**.******.0656` — BIN, masked middle, last4.
+static VISA_CARD_NUMBER: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\d{4}\*\*\.\*{6}\.\d{4}").unwrap());
+
+/// A lone Real amount cell: "98,49", " 8,26", "1.872,68", "- 8,27".
+static VISA_AMOUNT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^-?\s*\d{1,3}(?:\.\d{3})*,\d{2}$").unwrap());
+
+/// A lone date cell: DD/MM/YY or DD/MM/YYYY.
+static VISA_DATE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\d{2}/\d{2}/\d{2,4}$").unwrap());
+
+/// Trailing installment marker: "Parc.2/3", "Parc. 2/3", "Parcela 2 de 3".
+static VISA_PARCELA: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)parc(?:ela)?\.?\s*(\d{1,2})\s*(?:/|de)\s*(\d{1,2})\s*$").unwrap());
+
+/// Header/summary lines that must never be mistaken for a description.
+/// Matched case-insensitively as a trimmed prefix, so "Valor em Real- 8,27"
+/// (a header pdf-extract glued to a payment amount) is skipped wholesale —
+/// which is fine, that row is a payment we'd exclude anyway.
+const VISA_NOISE_PREFIXES: &[&str] = &[
+    "data",
+    "descricao",
+    "descrição",
+    "valor original",
+    "valor equivalente",
+    "em dólar",
+    "em dolar",
+    "taxa da conversão",
+    "taxa da conversao",
+    "(na data do gasto)",
+    "valor em real",
+    "fechamento da próxima fatura",
+    "fechamento da proxima fatura",
+    "valor total da fatura",
+    "saldo total consolidado",
+    "compras parceladas com e sem juros",
+    "total a pagar",
+    "demais encargos",
+    "limite",
+    "vencimento",
+    "r$",
+];
+
+/// True when the text looks like the Sofisa Visa template rather than the
+/// classic Mastercard one.
+pub fn is_visa_layout(text: &str) -> bool {
+    VISA_CARD_NUMBER.is_match(text) && text.to_lowercase().contains("valor em real")
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum VisaKind {
+    Date,
+    Amount,
+    Desc,
+    Skip,
+}
+
+fn classify_visa(line: &str) -> VisaKind {
+    let t = line.trim();
+    if t.is_empty() {
+        return VisaKind::Skip;
+    }
+    if VISA_DATE.is_match(t) {
+        return VisaKind::Date;
+    }
+    if VISA_AMOUNT.is_match(t) {
+        return VisaKind::Amount;
+    }
+    let lower = t.to_lowercase();
+    if VISA_NOISE_PREFIXES.iter().any(|p| lower.starts_with(p)) {
+        return VisaKind::Skip;
+    }
+    VisaKind::Desc
+}
+
+#[derive(Default)]
+struct VisaBand {
+    dates: Vec<String>,
+    descs: Vec<String>,
+    amounts: Vec<String>,
+}
+
+fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out: Vec<ParsedTransaction> = Vec::new();
+    let mut band = VisaBand::default();
+    // Which run we're filling: 0 = dates, 1 = descs, 2 = amounts. A band is
+    // always dates+ descs+ amounts+ in that order, so a Date after we've
+    // started descs/amounts marks the next band.
+    let mut phase = 0u8;
+
+    for (i, raw) in lines.iter().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Card boundary: the masked card number is a delimiter, and the
+        // cardholder-name line printed right before it is too. Flush the
+        // in-flight band so rows never straddle two cards.
+        if VISA_CARD_NUMBER.is_match(line) {
+            emit_visa_band(&band, &mut out);
+            band = VisaBand::default();
+            phase = 0;
+            continue;
+        }
+        if i + 1 < lines.len() && VISA_CARD_NUMBER.is_match(lines[i + 1].trim()) {
+            continue; // cardholder name line
+        }
+
+        match classify_visa(line) {
+            VisaKind::Skip => continue,
+            VisaKind::Date => {
+                if phase != 0 {
+                    emit_visa_band(&band, &mut out);
+                    band = VisaBand::default();
+                    phase = 0;
+                }
+                band.dates.push(line.to_string());
+            }
+            VisaKind::Desc => {
+                // A description after an amount run also starts a new band
+                // (defensive — the real layout separates bands with dates).
+                if phase == 2 {
+                    emit_visa_band(&band, &mut out);
+                    band = VisaBand::default();
+                    phase = 0;
+                }
+                phase = 1;
+                band.descs.push(line.to_string());
+            }
+            VisaKind::Amount => {
+                phase = 2;
+                band.amounts.push(line.to_string());
+            }
+        }
+    }
+    emit_visa_band(&band, &mut out);
+    Ok(out)
+}
+
+/// Zip a band's parallel runs into transactions. Extra amounts beyond the
+/// description count (e.g. the invoice total that lands in the last band's
+/// amount run) are ignored because we only take `min(len)` rows.
+fn emit_visa_band(band: &VisaBand, out: &mut Vec<ParsedTransaction>) {
+    let n = band.dates.len().min(band.descs.len()).min(band.amounts.len());
+    for i in 0..n {
+        let date_raw = &band.dates[i];
+        let desc_raw = &band.descs[i];
+        let amount_raw = &band.amounts[i];
+
+        let posted_at = match generic::normalize_date(date_raw, year_now(), None) {
+            Some(d) => d,
+            None => continue,
+        };
+        let amount_cents = match generic::parse_brl_to_cents(amount_raw) {
+            Some(v) => v,
+            None => continue,
+        };
+        // Negative = a payment/estorno the bank already deducted. Skip, same
+        // rule as the classic parser's "Pagamentos e Créditos" handling.
+        if amount_cents < 0 {
+            continue;
+        }
+
+        let (desc, installment) = peel_visa_desc(desc_raw);
+        let lower = desc.to_lowercase();
+        // Payments and credits that print as positive values (bill payment
+        // via Pix, cashback) are money flow with the bank, not purchases.
+        if lower.contains("baixa pagamento")
+            || lower.contains("pagamento fatura")
+            || lower.contains("pagamento via pix")
+            || lower.contains("estorno")
+            || lower.contains("cr\u{E9}dito")
+            || lower.contains("credito")
+        {
+            continue;
+        }
+
+        out.push(ParsedTransaction {
+            posted_at,
+            description: desc.clone(),
+            merchant_clean: clean_merchant(&desc),
+            amount_cents: amount_cents.abs(),
+            currency: "BRL".into(),
+            fx_rate: None,
+            installment,
+            is_refund: false,
+            is_virtual_card: false,
+            category_id: None,
+            raw: format!("{date_raw}  {desc_raw}  {amount_raw}"),
+        });
+    }
+}
+
+/// Strip the "Compra a Vista"/"Compra Parcelada" transaction-type prefix and
+/// peel a trailing "Parc.N/M" installment marker off a Visa description.
+fn peel_visa_desc(raw: &str) -> (String, Option<(i64, i64)>) {
+    let mut s = raw.trim();
+    for prefix in ["Compra a Vista", "Compra à Vista", "Compra Parcelada"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest.trim_start();
+            break;
+        }
+    }
+
+    let mut installment = None;
+    let mut desc = s.to_string();
+    if let Some(c) = VISA_PARCELA.captures(s) {
+        let idx: i64 = c[1].parse().unwrap_or(0);
+        let total: i64 = c[2].parse().unwrap_or(0);
+        if (1..=99).contains(&total) && (1..=total).contains(&idx) {
+            let m = c.get(0).unwrap();
+            desc = s[..m.start()].trim().to_string();
+            installment = Some((idx, total));
+        }
+    }
+
+    // Collapse the double spaces pdf-extract sprinkles between tokens
+    // ("SHEIN  *JIANGHUA" -> "SHEIN *JIANGHUA").
+    let desc = desc.split_whitespace().collect::<Vec<_>>().join(" ");
+    (desc, installment)
 }
 
 #[cfg(test)]
@@ -633,5 +898,154 @@ Data Transações Moeda Original Valor (R$)
         assert!(txs[11].is_virtual_card);
         assert_eq!(txs[11].description, "ABASTEC*abastece ai");
         assert!(txs[11].posted_at.starts_with("2024-07"));
+    }
+
+    // Real Sofisa Visa fatura excerpt (two cards, column-jumbled by
+    // pdf-extract). The invoice total printed at the bottom is R$ 1.872,68.
+    const VISA_SAMPLE: &str = "FELIPE DA SILVA SAURO\n\
+4563**.******.0656\n\
+Data\n\
+05/12/25\n\
+Descricao\n\
+STEAM Parc.2/3\n\
+Fechamento da pr\u{F3}xima fatura 20/02/2026\n\
+Valor Original\n\
+Valor Equivalente\n\
+em D\u{F3}lar US$\n\
+Taxa da Convers\u{E3}o R$\n\
+(na data do gasto)\n\
+Valor em Real\n\
+ 8,26\n\
+05/01/26\n\
+05/01/26\n\
+Compra a Vista IFD*LPX COMERCIO DE AL\n\
+Compra a Vista SHEIN  *JIANGHUA CHEN\n\
+98,49\n\
+166,89\n\
+FELIPE DA SILVA SAURO\n\
+4563**.******.1395\n\
+Data\n\
+25/12/25\n\
+Descricao\n\
+Baixa Pagamento Fatura Via Pix\n\
+Valor Original\n\
+Valor Equivalente\n\
+em D\u{F3}lar US$\n\
+Taxa da Convers\u{E3}o R$\n\
+(na data do gasto)\n\
+Valor em Real- 8,27\n\
+11/01/26\n\
+11/01/26\n\
+Compra a Vista ABASTEC*ABASTECE AI\n\
+Compra a Vista ELIANI LEVINSKI 000572080\n\
+90,00\n\
+ 5,00\n\
+11/01/26\n\
+11/01/26\n\
+Compra a Vista IFD*ELIANI LEVINSKI ORTIZ\n\
+Compra a Vista IFOOD\n\
+60,99\n\
+ 7,95\n\
+12/01/26\n\
+12/01/26\n\
+Compra a Vista JIM.COM* 20816760 ANDERSS\n\
+Compra a Vista AGA265\n\
+400,00\n\
+23,00\n\
+14/01/26\n\
+15/01/26\n\
+Compra a Vista SUPERMERCADOS TISCHLER\n\
+Compra a Vista SUPERMERCADOS TISCHLER\n\
+93,75\n\
+18,07\n\
+16/01/26\n\
+16/01/26\n\
+Compra a Vista MINIKALZONE\n\
+Compra a Vista JIM.COM* 20816760 ANDERSS\n\
+39,90\n\
+624,00\n\
+16/01/26\n\
+16/01/26\n\
+Compra a Vista MANLI BIJUS\n\
+Compra a Vista IFD*RAUL MENDES DA MOTTA\n\
+20,00\n\
+182,59\n\
+17/01/26\n\
+Compra a Vista SUPERMERCADOS\n\
+VALOR TOTAL DA FATURA\n\
+Saldo total consolidado de obriga\u{E7}\u{F5}es futuras\n\
+Compras Parceladas COM e SEM Juros; Opera\u{E7}\u{F5}es de Cr\u{E9}dito e Tarifas\n\
+33,79\n\
+1.872,68\n\
+Total a pagar (R$)\n\
+R$ 1.872,68\n\
+Demais encargos que poder\u{E3}o ser cobrados:\n";
+
+    #[test]
+    fn visa_layout_is_detected() {
+        assert!(is_visa_layout(VISA_SAMPLE));
+        // Classic Mastercard sample must NOT be mistaken for the Visa layout.
+        assert!(!is_visa_layout(SAMPLE_BASE));
+    }
+
+    #[test]
+    fn parses_visa_fatura() {
+        let txs = parse(VISA_SAMPLE, None, None).unwrap();
+
+        // 16 purchases: 3 on card 0656, 13 on card 1395. The Pix bill
+        // payment and the invoice-total line are both excluded.
+        assert_eq!(txs.len(), 16, "expected 16 purchases");
+
+        // No payment/credit rows leaked in.
+        assert!(
+            !txs.iter().any(|t| t.description.to_lowercase().contains("pagamento")),
+            "the Pix bill payment must be excluded",
+        );
+
+        // First row: STEAM installment 2/3, R$ 8,26, dated with the 2-digit year.
+        assert_eq!(txs[0].description, "STEAM");
+        assert_eq!(txs[0].amount_cents, 826);
+        assert_eq!(txs[0].installment, Some((2, 3)));
+        assert_eq!(txs[0].posted_at, "2025-12-05");
+        assert!(!txs[0].is_refund);
+
+        // "Compra a Vista" prefix stripped; double spaces collapsed.
+        assert_eq!(txs[1].description, "IFD*LPX COMERCIO DE AL");
+        assert_eq!(txs[1].amount_cents, 9849);
+        assert_eq!(txs[1].posted_at, "2026-01-05");
+        assert_eq!(txs[2].description, "SHEIN *JIANGHUA CHEN");
+        assert_eq!(txs[2].amount_cents, 16689);
+
+        // First row of the second card.
+        assert_eq!(txs[3].description, "ABASTEC*ABASTECE AI");
+        assert_eq!(txs[3].amount_cents, 9000);
+        assert_eq!(txs[3].posted_at, "2026-01-11");
+
+        // Last row: SUPERMERCADOS R$ 33,79 — the 1.872,68 total right after it
+        // in the amount column must not become a phantom transaction.
+        let last = txs.last().unwrap();
+        assert_eq!(last.description, "SUPERMERCADOS");
+        assert_eq!(last.amount_cents, 3379);
+        assert_eq!(last.posted_at, "2026-01-17");
+
+        // The whole thing must reconcile to the printed invoice total.
+        let sum: i64 = txs.iter().map(|t| t.amount_cents).sum();
+        assert_eq!(sum, 187268, "sum of purchases must equal R$ 1.872,68");
+    }
+
+    #[test]
+    fn peel_visa_desc_handles_prefix_and_parcela() {
+        let (d, p) = peel_visa_desc("Compra a Vista SHEIN  *JIANGHUA CHEN");
+        assert_eq!(d, "SHEIN *JIANGHUA CHEN");
+        assert!(p.is_none());
+
+        let (d, p) = peel_visa_desc("STEAM Parc.2/3");
+        assert_eq!(d, "STEAM");
+        assert_eq!(p, Some((2, 3)));
+
+        // A merchant code ending in digits must not false-match as a parcela.
+        let (d, p) = peel_visa_desc("Compra a Vista ELIANI LEVINSKI 000572080");
+        assert_eq!(d, "ELIANI LEVINSKI 000572080");
+        assert!(p.is_none());
     }
 }
