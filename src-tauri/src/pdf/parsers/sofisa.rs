@@ -491,7 +491,7 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
             VisaKind::Skip => continue,
             VisaKind::Date => {
                 if phase != 0 {
-                    emit_visa_band(&band, &mut out);
+                    emit_visa_band(&band, current_last4.as_deref(), &mut out);
                     band = VisaBand::default();
                     phase = 0;
                 }
@@ -501,7 +501,7 @@ fn parse_visa(text: &str) -> AppResult<Vec<ParsedTransaction>> {
                 // A description after an amount run also starts a new band
                 // (defensive — the real layout separates bands with dates).
                 if phase == 2 {
-                    emit_visa_band(&band, &mut out);
+                    emit_visa_band(&band, current_last4.as_deref(), &mut out);
                     band = VisaBand::default();
                     phase = 0;
                 }
